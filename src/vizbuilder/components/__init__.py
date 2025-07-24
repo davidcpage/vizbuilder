@@ -16,7 +16,18 @@ _loader = _ComponentLoader()
 
 gantt_chart = _loader.gantt_chart
 
-def require(modules=["d3"], config=None, user_code=""):
+
+def require(modules=["d3"], config=None, user_code="",
+                    requirejs_cdn="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js"):
+    """
+    Generate JavaScript code that ensures RequireJS is available and then executes user code.
+
+    Args:
+        modules: List of module names to load
+        config: RequireJS configuration object
+        user_code: User's JavaScript code to execute
+        requirejs_cdn: CDN URL for RequireJS fallback
+    """
     if config is None:
         config = {
             "paths": {
@@ -30,10 +41,30 @@ def require(modules=["d3"], config=None, user_code=""):
         }
 
     return f"""
-    require.config({json.dumps(config)});
-    require({json.dumps(modules)}, function({", ".join(modules)}) {{
-        {user_code}
-    }});
-    """
+(function() {{
+    function executeWithRequire() {{
+        require.config({json.dumps(config)});
+        require({json.dumps(modules)}, function({", ".join(modules)}) {{
+            {user_code}
+        }});
+    }}
+
+    // Check if RequireJS is already available
+    if (typeof require !== 'undefined' && typeof require.config === 'function') {{
+        console.log('RequireJS is already loaded.');
+        executeWithRequire();
+    }} else {{
+        // Load RequireJS from CDN
+        var script = document.createElement('script');
+        script.type = 'text/javascript';
+        script.src = '{requirejs_cdn}';
+        script.onload = executeWithRequire;
+        script.onerror = function() {{
+            console.error('Failed to load RequireJS from CDN. Check internet connection.');
+        }};
+        (document.head || document.getElementsByTagName('head')[0]).appendChild(script);
+    }}
+}})();
+"""
 
 __all__ = ['require', 'gantt_chart']
