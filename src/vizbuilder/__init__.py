@@ -6,11 +6,11 @@ __version__ = "0.1.0"
 __author__ = "David Page"
 
 from .core.html_builder import Html
-from .components import require_d3
+from .components import require
 
 
 __all__ = [
     "Html",
-    'require_d3',
+    'require',
     # Add other components or utilities here as needed
 ]
