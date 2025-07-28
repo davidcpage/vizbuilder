@@ -3,6 +3,7 @@ from functools import cached_property
 import json
 
 
+
 class _ComponentLoader:
     def __init__(self):
         self._assets_dir = Path(__file__).parent / 'assets'
