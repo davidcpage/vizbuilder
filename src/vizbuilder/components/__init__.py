@@ -11,10 +11,15 @@ class _ComponentLoader:
     def gantt_chart(self):
         return (self._assets_dir / 'gantt_chart.js').read_text()
     
+    @cached_property
+    def rectangles(self):
+        return (self._assets_dir / 'rectangles.js').read_text()
+
 
 _loader = _ComponentLoader()
 
 gantt_chart = _loader.gantt_chart
+rectangles = _loader.rectangles
 
 
 def require(modules=["d3"], config=None, user_code="",
@@ -70,4 +75,4 @@ def require(modules=["d3"], config=None, user_code="",
 }})();
 """
 
-__all__ = ['require', 'gantt_chart']
+__all__ = ['require', 'gantt_chart' 'rectangles']
