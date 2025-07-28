@@ -31,15 +31,18 @@ def require(modules=["d3"], config=None, user_code="",
     if config is None:
         config = {
             "paths": {
-                "d3": "https://d3js.org/d3.v7.min"
+                "d3": "https://d3js.org/d3.v7.min",
+                "rough": "https://cdn.jsdelivr.net/npm/roughjs@4.6.6/bundled/rough.min",
             },
             "shim": {
                 "d3": {
                     "exports": "d3"
+                },
+                "rough": {
+                    "exports": "rough"
                 }
             }
         }
-
     return f"""
 (function() {{
     function executeWithRequire() {{
