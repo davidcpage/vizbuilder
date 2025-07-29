@@ -46,7 +46,7 @@ function drawRectangles(use_rough = false) {
                 // Create the rough rectangle
                     const roughRect = rc.rectangle(d.x, d.y, d.width, d.height, {
                         roughness: d.roughness,
-                        fill: d.color,
+                        fill: d.color || "transparent",
                         stroke: d.stroke_color,
                         strokeWidth: d.stroke_width == null ? 0.01*d3.min([d3.max([d.width, d.height]), 5000]) : d.stroke_width,
                         fillStyle: 'solid'
@@ -68,8 +68,9 @@ function drawRectangles(use_rough = false) {
                     .attr("ry", d => d.ry)
                     .attr("width", d => d.width)
                     .attr("height",  d => d.height)
-                    .attr("fill", d => d.color)
+                    .attr("fill", d => d.color || "transparent")
                     .attr("stroke", d => d.stroke_color)
+                    .attr("stroke-dasharray", d => d.stroke_dasharray || "none")
                     .attr("stroke-width", d => d.stroke_width == null ? 0.01*d3.min([d3.max([d.width, d.height]), 5000]) : d.stroke_width);
             }
         

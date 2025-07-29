@@ -12,6 +12,7 @@ class Rect:
     color: str = "#000000"
     roughness: float = 0. 
     stroke_color: str = "black"
+    stroke_dasharray: str = "none"  # e.g., "5,5" for dashed lines
     stroke_width: float = None
     text: str = ""
     font_size: str = ""
