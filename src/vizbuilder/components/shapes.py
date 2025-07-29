@@ -68,7 +68,13 @@ class Rects:
         """Convert all rectangles to JSON."""
         return json.dumps([rect.to_dict() for rect in self.rects])
 
-def hstack(shapes, padding=0.0):
+def hstack(shapes, padding=0.0, center=False):
+    if center:
+        height = max(shape.bounding_rect().height for shape in shapes)
+        shapes = [
+            shape.translate(0, (height - shape.bounding_rect().height) / 2)
+            for shape in shapes
+        ]
     dx = 0.0
     stack = []
     for shape in shapes:
@@ -77,7 +83,13 @@ def hstack(shapes, padding=0.0):
         dx += shape.bounding_rect().width + padding
     return Rects(stack)   
 
-def vstack(shapes, padding=0.0):
+def vstack(shapes, padding=0.0, center=False):
+    if center:
+        width = max(shape.bounding_rect().width for shape in shapes)
+        shapes = [
+            shape.translate((width - shape.bounding_rect().width) / 2, 0)
+            for shape in shapes
+        ]
     dy = 0.0
     stack = []
     for shape in shapes:

@@ -48,10 +48,9 @@ function drawRectangles(use_rough = false) {
                         roughness: d.roughness,
                         fill: d.color,
                         stroke: d.stroke_color,
-                        strokeWidth: d.stroke_width == null ? d.width*0.01 : d.stroke_width,
+                        strokeWidth: d.stroke_width == null ? 0.01*d3.min([d3.max([d.width, d.height]), 5000]) : d.stroke_width,
                         fillStyle: 'solid'
                     });
-
                     // Append the rough rectangle to the group
                     g.node().appendChild(roughRect);
                 });
@@ -71,7 +70,7 @@ function drawRectangles(use_rough = false) {
                     .attr("height",  d => d.height)
                     .attr("fill", d => d.color)
                     .attr("stroke", d => d.stroke_color)
-                    .attr("stroke-width", d => d.stroke_width == null ? d.width*0.01 : d.stroke_width);
+                    .attr("stroke-width", d => d.stroke_width == null ? 0.01*d3.min([d3.max([d.width, d.height]), 5000]) : d.stroke_width);
             }
         
             // Draw text labels
