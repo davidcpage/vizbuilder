@@ -57,9 +57,19 @@ function ganttChart() {
                 .attr("height", containerHeight);
 
             // Create main group container
-            const g = svg.append("g")
-                .attr("transform", `translate(${margin.left},${margin.top})`);
-            
+            const g = svg.append("g");
+            const zoom = d3.zoom()
+                .scaleExtent([0.1, 10])  // Set zoom scale limits
+                .on("zoom", function(event) {
+                    g.attr("transform", event.transform);
+                });
+
+            // Apply zoom behavior to the SVG and set initial zoom
+            svg.call(zoom)
+            .call(zoom.transform, d3.zoomIdentity.translate(margin.left, margin.top)); // Set initial transform
+
+
+
             // Add plot area background
             g.append("rect")
                 .attr("class", "plot-area")
@@ -120,16 +130,16 @@ function ganttChart() {
                 .attr("stroke", "none");
             
             // Add text labels on bars
-            g.selectAll(".bar-text")
-                .data(data.filter(d => d.text !== ""))
-                .enter()
-                .append("text")
-                .attr("class", "bar-text")
-                .attr("x", d => xScale(d.start + d.duration / 2))
-                .attr("y", d => yScale(d.category) + yScale.bandwidth() / 2)
-                .attr("text-anchor", "middle")
-                .attr("dominant-baseline", "middle")
-                .text(d => d.text);
+            //g.selectAll(".bar-text")
+            //    .data(data.filter(d => d.text !== ""))
+            //    .enter()
+            //    .append("text")
+            //    .attr("class", "bar-text")
+            //    .attr("x", d => xScale(d.start + d.duration / 2))
+            //    .attr("y", d => yScale(d.category) + yScale.bandwidth() / 2)
+            //    .attr("text-anchor", "middle")
+             //   .attr("dominant-baseline", "middle")
+            //    .text(d => d.text);
             
             // Add title
             svg.append("text")
@@ -214,19 +224,13 @@ function ganttChart() {
                             
                             <div style="display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; font-size: 12px;">
                                 <span style="color: #ccc;">🕐 Start:</span>
-                                <strong>${d.start}</strong>
+                                <strong>${Math.round(d.start).toLocaleString()}</strong>
                                 
                                 <span style="color: #ccc;">🕐 Duration:</span>
-                                <strong>${d.duration}</strong>
+                                <strong>${Math.round(d.duration).toLocaleString()}</strong>
                                 
                                 <span style="color: #ccc;">🕐 End:</span>
-                                <strong>${d.start + d.duration}</strong>
-
-                                <span style="color: #ccc;">🎯 Status:</span>
-                                <div style="display: flex; align-items: center; gap: 4px;">
-                                    <div style="width: 8px; height: 8px; border-radius: 50%; background-color: #4CAF50;"></div>
-                                    <span style="color: #4CAF50; font-weight: bold;">Active</span>
-                                </div>
+                                <strong>${Math.round(d.start + d.duration).toLocaleString()}</strong>
                             </div>
                         </div>
                     `;
