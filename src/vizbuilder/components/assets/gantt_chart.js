@@ -1,9 +1,16 @@
-function ganttChart() {
+(function() {
+    // Always reload to ensure we get the latest version during development
+    
+    window.ganttChart = function ganttChart() {
     // Default configuration
     const margin = {top: 40, right: 40, bottom: 60, left: 60};
     let width = null; 
     let height = 300;
     let padding = 0.2;
+    let scrubberEnabled = true;
+    
+    // Event dispatcher for component communication
+    const dispatch = d3.dispatch("scrubberMove", "scrubberStart", "scrubberEnd");
 
     function chart(selection) {
         selection.each(function(data) {
@@ -117,7 +124,7 @@ function ganttChart() {
                 .call(g => g.selectAll("text").style("font-size", "12px"));
         
             // Add bars
-            g.selectAll(".bar")
+            const bars = g.selectAll(".bar")
                 .data(data)
                 .enter()
                 .append("rect")
@@ -128,6 +135,138 @@ function ganttChart() {
                 .attr("height", yScale.bandwidth())
                 .attr("fill", d => d.color)
                 .attr("stroke", "none");
+            
+            // Store current scrubber position for coordination with hover effects
+            let currentScrubberX = inner_width * 0.3;
+            
+            // Helper function to check if a timeline entry intersects with current scrubber position
+            function checkCurrentIntersection(d) {
+                if (!scrubberEnabled) return true;
+                const entryStart = xScale(d.start);
+                const entryEnd = xScale(d.start + d.duration);
+                return currentScrubberX >= entryStart && currentScrubberX <= entryEnd;
+            }
+            
+            // Helper function to get correct opacity for a bar based on scrubber state
+            function getBarOpacity(d) {
+                if (!scrubberEnabled) return 1.0;
+                const isIntersected = checkCurrentIntersection(d);
+                return isIntersected ? 1.0 : 0.3;
+            }
+            
+            // Add horizontal scrubber
+            if (scrubberEnabled) {
+                // Use the global currentScrubberX variable, don't redeclare
+                
+                // Helper function to check if a timeline entry intersects with scrubber
+                function checkIntersection(d, scrubberPosition) {
+                    const entryStart = xScale(d.start);
+                    const entryEnd = xScale(d.start + d.duration);
+                    return scrubberPosition >= entryStart && scrubberPosition <= entryEnd;
+                }
+                
+                // Helper function to update visual feedback and emit events
+                function updateScrubberState(scrubberPosition) {
+                    const intersectedData = [];
+                    
+                    // Update bar opacity based on intersection
+                    bars.transition("scrubber")  // Named transition to avoid conflicts
+                        .duration(150)
+                        .attr("opacity", function(d) {
+                            const isIntersected = checkIntersection(d, scrubberPosition);
+                            if (isIntersected) {
+                                intersectedData.push(d);
+                                return 1.0; // Full opacity for intersected
+                            }
+                            return 0.3; // Reduced opacity for non-intersected
+                        });
+                    
+                    // Store current scrubber position for hover coordination
+                    currentScrubberX = scrubberPosition;
+                    
+                    // Emit event with intersected data
+                    const scrubberValue = xScale.invert(scrubberPosition);
+                    dispatch.call("scrubberMove", null, {
+                        position: scrubberValue,
+                        intersectedData: intersectedData
+                    });
+                }
+                
+                // Create scrubber group
+                const scrubberGroup = g.append("g").attr("class", "scrubber");
+                
+                // Scrubber line
+                const scrubberLine = scrubberGroup.append("line")
+                    .attr("class", "scrubber-line")
+                    .attr("x1", currentScrubberX)
+                    .attr("x2", currentScrubberX)
+                    .attr("y1", 0)
+                    .attr("y2", inner_height)
+                    .attr("stroke", "#ff6b35")
+                    .attr("stroke-width", 3)
+                    .attr("opacity", 0.8)
+                    .style("cursor", "ew-resize");
+                
+                // Scrubber handle (circle at top)
+                const scrubberHandle = scrubberGroup.append("circle")
+                    .attr("class", "scrubber-handle")
+                    .attr("cx", currentScrubberX)
+                    .attr("cy", -10)
+                    .attr("r", 8)
+                    .attr("fill", "#ff6b35")
+                    .attr("stroke", "white")
+                    .attr("stroke-width", 2)
+                    .style("cursor", "ew-resize");
+                
+                // Scrubber value label
+                const scrubberLabel = scrubberGroup.append("text")
+                    .attr("class", "scrubber-label")
+                    .attr("x", currentScrubberX)
+                    .attr("y", -20)
+                    .attr("text-anchor", "middle")
+                    .attr("fill", "#ff6b35")
+                    .attr("font-size", "12px")
+                    .attr("font-weight", "bold")
+                    .text(Math.round(xScale.invert(currentScrubberX)));
+                
+                // Drag behavior
+                const drag = d3.drag()
+                    .on("start", function(event) {
+                        dispatch.call("scrubberStart", null, {
+                            position: xScale.invert(currentScrubberX)
+                        });
+                    })
+                    .on("drag", function(event) {
+                        // Constrain scrubber to chart bounds and update global position
+                        currentScrubberX = Math.max(0, Math.min(inner_width, event.x));
+                        
+                        // Update scrubber position
+                        scrubberLine
+                            .attr("x1", currentScrubberX)
+                            .attr("x2", currentScrubberX);
+                        
+                        scrubberHandle.attr("cx", currentScrubberX);
+                        
+                        scrubberLabel
+                            .attr("x", currentScrubberX)
+                            .text(Math.round(xScale.invert(currentScrubberX)));
+                        
+                        // Update intersections and emit events
+                        updateScrubberState(currentScrubberX);
+                    })
+                    .on("end", function(event) {
+                        dispatch.call("scrubberEnd", null, {
+                            position: xScale.invert(currentScrubberX)
+                        });
+                    });
+                
+                // Apply drag behavior to both line and handle
+                scrubberLine.call(drag);
+                scrubberHandle.call(drag);
+                
+                // Initialize scrubber state
+                updateScrubberState(currentScrubberX);
+            }
             
             // Add text labels on bars
             //g.selectAll(".bar-text")
@@ -207,6 +346,8 @@ function ganttChart() {
             g.selectAll(".bar")
                 .on("mouseover", function(event, d) {
                     d3.select(this)
+                        .interrupt("scrubber")  // Cancel scrubber transitions
+                        .interrupt("hover")     // Cancel any existing hover transitions
                         .attr("opacity", 0.8)
                         .attr("stroke", "#333")
                         .attr("stroke-width", 2);
@@ -258,8 +399,14 @@ function ganttChart() {
                         .style("top", tooltipPos.y + "px");
                 })
                 .on("mouseout", function(event, d) {
+                    // Reset opacity based on scrubber state
+                    const targetOpacity = getBarOpacity(d);
                     d3.select(this)
-                        .attr("opacity", 1)
+                        .interrupt("scrubber")  // Cancel scrubber transitions on this element
+                        .interrupt("hover")     // Cancel hover transitions too
+                        .transition("hover")    // Use named transition for clean reset
+                        .duration(100)
+                        .attr("opacity", targetOpacity)
                         .attr("stroke", "none");
                     
                     // Hide tooltip
@@ -275,6 +422,15 @@ function ganttChart() {
         return arguments.length ? (width = _, chart) : width;
     };
     
+    chart.scrubberEnabled = function(_) {
+        return arguments.length ? (scrubberEnabled = _, chart) : scrubberEnabled;
+    };
+    
+    // Expose event dispatcher for external components
+    chart.on = function(type, callback) {
+        return dispatch.on(type, callback);
+    };
+    
     chart.padding = function(_) {
         return arguments.length ? (padding = _, chart) : padding;
     };
@@ -284,4 +440,5 @@ function ganttChart() {
     };
     
     return chart;
-}
+    };
+})();

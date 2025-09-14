@@ -1,4 +1,8 @@
-function initSVG(container, scale = 1.0, translateX = 0.0, translateY = 0.0) {
+(function() {
+    // Always reload to ensure we get the latest version during development
+    // if (window.initSVG && window.drawRectangles) return; // Commented out to allow updates
+    
+    window.initSVG = function initSVG(container, scale = 1.0, translateX = 0.0, translateY = 0.0) {
     const containerRect = container.node().parentElement.getBoundingClientRect();
     
     const svg = container
@@ -21,9 +25,9 @@ function initSVG(container, scale = 1.0, translateX = 0.0, translateY = 0.0) {
        .call(zoom.transform, d3.zoomIdentity.scale(scale).translate(translateX / scale, translateY / scale)); // Set initial transform
 
     return {svg, g};
-}
+    };
 
-function drawRectangles(use_rough = false) {
+    window.drawRectangles = function drawRectangles(use_rough = false) {
     // Default configuration
     let scale = 1.0;
     let translateX = 0.0;
@@ -104,6 +108,7 @@ function drawRectangles(use_rough = false) {
 
     
     return chart;
-}
+    };
+})();
 
 
