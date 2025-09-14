@@ -1,6 +1,7 @@
 from pathlib import Path
 from functools import cached_property
 import json
+import base64
 
 
 
@@ -20,6 +21,19 @@ class _ComponentLoader:
     def data_display(self):
         return (self._assets_dir / 'data_display.js').read_text()
 
+    # Cached data URIs for efficient loading
+    @cached_property
+    def rectangles_data_uri(self):
+        return f"data:text/javascript;base64,{base64.b64encode(self.rectangles.encode()).decode()}"
+
+    @cached_property
+    def gantt_chart_data_uri(self):
+        return f"data:text/javascript;base64,{base64.b64encode(self.gantt_chart.encode()).decode()}"
+
+    @cached_property
+    def data_display_data_uri(self):
+        return f"data:text/javascript;base64,{base64.b64encode(self.data_display.encode()).decode()}"
+
 
 _loader = _ComponentLoader()
 
@@ -28,13 +42,13 @@ rectangles = _loader.rectangles
 data_display = _loader.data_display
 
 
-def require(modules=["d3"], config=None, user_code="",
+def require(modules=None, config=None, user_code="",
                     requirejs_cdn="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js"):
     """
     Generate JavaScript code that ensures RequireJS is available and then executes user code.
 
     Args:
-        modules: List of module names to load
+        modules: List of module names to load (None = all modules from config)
         config: RequireJS configuration object
         user_code: User's JavaScript code to execute
         requirejs_cdn: CDN URL for RequireJS fallback
@@ -44,6 +58,10 @@ def require(modules=["d3"], config=None, user_code="",
             "paths": {
                 "d3": "https://d3js.org/d3.v7.min",
                 "rough": "https://cdn.jsdelivr.net/npm/roughjs@4.6.6/bundled/rough.min",
+                # Local components as cached data URIs - using camelCase names
+                "drawRectangles": _loader.rectangles_data_uri,
+                "ganttChart": _loader.gantt_chart_data_uri,
+                "dataDisplay": _loader.data_display_data_uri,
             },
             "shim": {
                 "d3": {
@@ -54,6 +72,10 @@ def require(modules=["d3"], config=None, user_code="",
                 }
             }
         }
+
+    # If no modules specified, load all modules from config
+    if modules is None:
+        modules = list(config["paths"].keys())
     return f"""
 (function() {{
     function executeWithRequire() {{

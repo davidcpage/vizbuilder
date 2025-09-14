@@ -1,7 +1,5 @@
-(function() {
-    // Always reload to ensure we get the latest version during development
-    
-    window.ganttChart = function ganttChart() {
+define(['d3'], function(d3) {
+    function ganttChart() {
     // Default configuration
     const margin = {top: 40, right: 40, bottom: 60, left: 60};
     let width = null; 
@@ -438,7 +436,10 @@
     chart.height = function(_) {
         return arguments.length ? (height = _, chart) : height;
     };
-    
+
     return chart;
-    };
-})();
+    }
+
+    // Return the ganttChart function
+    return ganttChart;
+});
