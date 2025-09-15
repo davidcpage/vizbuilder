@@ -149,7 +149,7 @@ define(['d3'], function(d3) {
 
                 // Update bar opacity based on intersection
                 bars.transition("scrubber")
-                    .duration(150)
+                    .duration(50)
                     .attr("opacity", function(d) {
                         const isIntersected = checkIntersection(d, scrubberPosition);
                         if (isIntersected) {
@@ -361,7 +361,7 @@ define(['d3'], function(d3) {
                         .style("left", tooltipPos.x + "px")
                         .style("top", tooltipPos.y + "px")
                         .transition()
-                        .duration(200)
+                        .duration(100)
                         .style("opacity", 1);
                 })
                 .on("mousemove", function(event, d) {
@@ -386,7 +386,7 @@ define(['d3'], function(d3) {
 
                     // Hide tooltip
                     tooltip.transition()
-                        .duration(300)
+                        .duration(150)
                         .style("opacity", 0);
                 });
         });
