@@ -133,61 +133,45 @@ define(['d3'], function(d3) {
                 .attr("fill", d => d.color)
                 .attr("stroke", "none");
             
-            // Store current scrubber position for coordination with hover effects
+            // Store current scrubber position
             let currentScrubberX = inner_width * 0.3;
-            
-            // Helper function to check if a timeline entry intersects with current scrubber position
-            function checkCurrentIntersection(d) {
-                if (!scrubberEnabled) return true;
+
+            // Helper function to check if a timeline entry intersects with scrubber position
+            function checkIntersection(d, scrubberPosition) {
                 const entryStart = xScale(d.start);
                 const entryEnd = xScale(d.start + d.duration);
-                return currentScrubberX >= entryStart && currentScrubberX <= entryEnd;
+                return scrubberPosition >= entryStart && scrubberPosition <= entryEnd;
             }
             
-            // Helper function to get correct opacity for a bar based on scrubber state
-            function getBarOpacity(d) {
-                if (!scrubberEnabled) return 1.0;
-                const isIntersected = checkCurrentIntersection(d);
-                return isIntersected ? 1.0 : 0.3;
+            // Helper function to update visual feedback and emit events
+            function updateScrubberState(scrubberPosition) {
+                const intersectedData = [];
+
+                // Update bar opacity based on intersection
+                bars.transition("scrubber")
+                    .duration(150)
+                    .attr("opacity", function(d) {
+                        const isIntersected = checkIntersection(d, scrubberPosition);
+                        if (isIntersected) {
+                            intersectedData.push(d);
+                            return 1.0;
+                        }
+                        return 0.3;
+                    });
+
+                // Store current scrubber position
+                currentScrubberX = scrubberPosition;
+
+                // Emit event with intersected data
+                const scrubberValue = xScale.invert(scrubberPosition);
+                dispatch.call("scrubberMove", null, {
+                    position: scrubberValue,
+                    intersectedData: intersectedData
+                });
             }
-            
+
             // Add horizontal scrubber
             if (scrubberEnabled) {
-                // Use the global currentScrubberX variable, don't redeclare
-                
-                // Helper function to check if a timeline entry intersects with scrubber
-                function checkIntersection(d, scrubberPosition) {
-                    const entryStart = xScale(d.start);
-                    const entryEnd = xScale(d.start + d.duration);
-                    return scrubberPosition >= entryStart && scrubberPosition <= entryEnd;
-                }
-                
-                // Helper function to update visual feedback and emit events
-                function updateScrubberState(scrubberPosition) {
-                    const intersectedData = [];
-                    
-                    // Update bar opacity based on intersection
-                    bars.transition("scrubber")  // Named transition to avoid conflicts
-                        .duration(150)
-                        .attr("opacity", function(d) {
-                            const isIntersected = checkIntersection(d, scrubberPosition);
-                            if (isIntersected) {
-                                intersectedData.push(d);
-                                return 1.0; // Full opacity for intersected
-                            }
-                            return 0.3; // Reduced opacity for non-intersected
-                        });
-                    
-                    // Store current scrubber position for hover coordination
-                    currentScrubberX = scrubberPosition;
-                    
-                    // Emit event with intersected data
-                    const scrubberValue = xScale.invert(scrubberPosition);
-                    dispatch.call("scrubberMove", null, {
-                        position: scrubberValue,
-                        intersectedData: intersectedData
-                    });
-                }
                 
                 // Create scrubber group
                 const scrubberGroup = g.append("g").attr("class", "scrubber");
@@ -228,41 +212,37 @@ define(['d3'], function(d3) {
                 
                 // Drag behavior
                 const drag = d3.drag()
-                    .on("start", function(event) {
-                        dispatch.call("scrubberStart", null, {
-                            position: xScale.invert(currentScrubberX)
-                        });
-                    })
                     .on("drag", function(event) {
-                        // Constrain scrubber to chart bounds and update global position
+                        // Constrain scrubber to chart bounds
                         currentScrubberX = Math.max(0, Math.min(inner_width, event.x));
-                        
+
                         // Update scrubber position
                         scrubberLine
                             .attr("x1", currentScrubberX)
                             .attr("x2", currentScrubberX);
-                        
+
                         scrubberHandle.attr("cx", currentScrubberX);
-                        
+
                         scrubberLabel
                             .attr("x", currentScrubberX)
                             .text(Math.round(xScale.invert(currentScrubberX)));
-                        
+
                         // Update intersections and emit events
                         updateScrubberState(currentScrubberX);
-                    })
-                    .on("end", function(event) {
-                        dispatch.call("scrubberEnd", null, {
-                            position: xScale.invert(currentScrubberX)
-                        });
                     });
                 
                 // Apply drag behavior to both line and handle
                 scrubberLine.call(drag);
                 scrubberHandle.call(drag);
-                
+
                 // Initialize scrubber state
                 updateScrubberState(currentScrubberX);
+            } else {
+                // Even without scrubber, emit initial data for linked components
+                dispatch.call("scrubberMove", null, {
+                    position: null,
+                    intersectedData: data  // All data when no scrubber
+                });
             }
             
             // Add text labels on bars
@@ -394,16 +374,16 @@ define(['d3'], function(d3) {
                         .style("top", tooltipPos.y + "px");
                 })
                 .on("mouseout", function(event, d) {
-                    // Reset opacity based on scrubber state
-                    const targetOpacity = getBarOpacity(d);
+                    // Reset to scrubber-determined opacity
+                    const isIntersected = scrubberEnabled ? checkIntersection(d, currentScrubberX) : true;
+                    const targetOpacity = isIntersected ? 1.0 : 0.3;
+
                     d3.select(this)
-                        .interrupt("scrubber")  // Cancel scrubber transitions on this element
-                        .interrupt("hover")     // Cancel hover transitions too
-                        .transition("hover")    // Use named transition for clean reset
+                        .transition()
                         .duration(100)
-                        .attr("opacity", targetOpacity)
+                        .attr("opacity", scrubberEnabled ? targetOpacity : 1.0)
                         .attr("stroke", "none");
-                    
+
                     // Hide tooltip
                     tooltip.transition()
                         .duration(300)
