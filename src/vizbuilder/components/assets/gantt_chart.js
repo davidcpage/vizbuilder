@@ -1,7 +1,7 @@
 define(['d3'], function(d3) {
     function ganttChart() {
     // Default configuration
-    const margin = {top: 40, right: 40, bottom: 60, left: 60};
+    const margin = {top: 60, right: 40, bottom: 60, left: 60};
     let width = null; 
     let height = 300;
     let padding = 0.2;
@@ -56,18 +56,24 @@ define(['d3'], function(d3) {
             // Ensure the container has relative positioning for proper tooltip positioning
             container.style("position", "relative");
             
-            // Create SVG 
+            // Create SVG
             const svg = container
                 .append("svg")
                 .attr("width", containerWidth)
                 .attr("height", containerHeight);
+   
 
-            // Create main group container
-            const g = svg.append("g");
+            // Create layered groups for proper z-ordering
+            const barsGroup = svg.append("g").attr("class", "bars-layer");
+            const titleGroup = svg.append("g").attr("class", "title-layer");
+            const scrubberGroup = svg.append("g").attr("class", "scrubber-layer");
+
+            // Create zoom behavior that affects both bars and scrubber layers
             const zoom = d3.zoom()
                 .scaleExtent([0.1, 10])  // Set zoom scale limits
                 .on("zoom", function(event) {
-                    g.attr("transform", event.transform);
+                    barsGroup.attr("transform", event.transform);
+                    scrubberGroup.attr("transform", event.transform);
                 });
 
             // Apply zoom behavior to the SVG and set initial zoom
@@ -75,7 +81,7 @@ define(['d3'], function(d3) {
             .call(zoom.transform, d3.zoomIdentity.translate(margin.left, margin.top)); // Set initial transform
 
             // Add plot area background
-            g.append("rect")
+            barsGroup.append("rect")
                 .attr("class", "plot-area")
                 .attr("width", inner_width)
                 .attr("height", inner_height)
@@ -87,8 +93,8 @@ define(['d3'], function(d3) {
                 .tickFormat("")
                 .ticks(num_ticks)
                 .tickSizeOuter(0);
-            
-            g.append("g")
+
+            barsGroup.append("g")
                 .attr("class", "grid")
                 .attr("transform", `translate(0,${inner_height})`)
                 .call(xGrid)
@@ -97,31 +103,31 @@ define(['d3'], function(d3) {
                 .attr("class", "grid-line")
                 .attr("stroke", "white")
                 .attr("stroke-width", 3);
-            
+
             // Create axes
             const xAxisBottom = d3.axisBottom(xScale)
                 .tickSize(0)
                 .ticks(num_ticks);
             const yAxisLeft = d3.axisLeft(yScale)
                 .tickSize(0);
-            
+
             // Add X axis
-            g.append("g")
+            barsGroup.append("g")
                 .attr("class", "axis")
                 .attr("transform", `translate(0,${inner_height})`)
                 .call(xAxisBottom)
                 .call(g => g.selectAll(".domain").remove())
                 .call(g => g.selectAll("text").style("font-size", "12px"));
-            
+
             // Add Y axis
-            g.append("g")
+            barsGroup.append("g")
                 .attr("class", "axis")
                 .call(yAxisLeft)
                 .call(g => g.selectAll(".domain").remove())
                 .call(g => g.selectAll("text").style("font-size", "12px"));
-        
+
             // Add bars
-            const bars = g.selectAll(".bar")
+            const bars = barsGroup.selectAll(".bar")
                 .data(data)
                 .enter()
                 .append("rect")
@@ -133,6 +139,15 @@ define(['d3'], function(d3) {
                 .attr("fill", d => d.color)
                 .attr("stroke", "none");
             
+            // Add title to middle layer
+            titleGroup.append("text")
+                .attr("class", "title")
+                .attr("x", containerWidth / 2)
+                .attr("y", 25)
+                .attr("text-anchor", "middle")
+                .style("font-size", "15px")
+                .text("timeline");
+
             // Store current scrubber position
             let currentScrubberX = inner_width * 0.3;
 
@@ -173,8 +188,7 @@ define(['d3'], function(d3) {
             // Add horizontal scrubber
             if (scrubberEnabled) {
                 
-                // Create scrubber group
-                const scrubberGroup = g.append("g").attr("class", "scrubber");
+                // Use the front layer scrubber group
                 
                 // Scrubber line
                 const scrubberLine = scrubberGroup.append("line")
@@ -192,23 +206,40 @@ define(['d3'], function(d3) {
                 const scrubberHandle = scrubberGroup.append("circle")
                     .attr("class", "scrubber-handle")
                     .attr("cx", currentScrubberX)
-                    .attr("cy", -10)
+                    .attr("cy", 0)
                     .attr("r", 8)
                     .attr("fill", "#ff6b35")
                     .attr("stroke", "white")
                     .attr("stroke-width", 2)
                     .style("cursor", "ew-resize");
                 
+                // Scrubber value label background
+                const scrubberLabelBg = scrubberGroup.append("rect")
+                    .attr("class", "scrubber-label-bg")
+                    .attr("fill", "rgba(255, 255, 255, 0.9)")
+                    .attr("stroke", "#ff6b35")
+                    .attr("stroke-width", 1)
+                    .attr("rx", 3)
+                    .attr("ry", 3);
+
                 // Scrubber value label
                 const scrubberLabel = scrubberGroup.append("text")
                     .attr("class", "scrubber-label")
                     .attr("x", currentScrubberX)
-                    .attr("y", -20)
+                    .attr("y", -15)
                     .attr("text-anchor", "middle")
                     .attr("fill", "#ff6b35")
                     .attr("font-size", "12px")
                     .attr("font-weight", "bold")
                     .text(Math.round(xScale.invert(currentScrubberX)));
+
+                // Position background after text is rendered
+                const labelBBox = scrubberLabel.node().getBBox();
+                scrubberLabelBg
+                    .attr("x", labelBBox.x - 4)
+                    .attr("y", labelBBox.y - 2)
+                    .attr("width", labelBBox.width + 8)
+                    .attr("height", labelBBox.height + 4);
                 
                 // Drag behavior
                 const drag = d3.drag()
@@ -226,6 +257,10 @@ define(['d3'], function(d3) {
                         scrubberLabel
                             .attr("x", currentScrubberX)
                             .text(Math.round(xScale.invert(currentScrubberX)));
+
+                        // Update background x position only
+                        const labelBBox = scrubberLabel.node().getBBox();
+                        scrubberLabelBg.attr("x", labelBBox.x - 4);
 
                         // Update intersections and emit events
                         updateScrubberState(currentScrubberX);
@@ -257,25 +292,17 @@ define(['d3'], function(d3) {
              //   .attr("dominant-baseline", "middle")
             //    .text(d => d.text);
             
-            // Add title
-            svg.append("text")
-                .attr("class", "title")
-                .attr("x", containerWidth / 2)
-                .attr("y", 25)
-                .attr("text-anchor", "middle")
-                .style("font-size", "15px")
-                .text("timeline");
             
-            // Add axis labels
-            svg.append("text")
+            // Add axis labels to middle layer
+            titleGroup.append("text")
                 .attr("class", "axis-label")
                 .attr("transform", "rotate(-90)")
                 .attr("y", 20)
                 .attr("x", -containerHeight / 2)
                 .style("text-anchor", "middle")
                 .text("y-axis");
-            
-            svg.append("text")
+
+            titleGroup.append("text")
                 .attr("class", "axis-label")
                 .attr("x", containerWidth / 2)
                 .attr("y", containerHeight - 10)
@@ -318,7 +345,7 @@ define(['d3'], function(d3) {
             }
 
             // Add interactivity with tooltips
-            g.selectAll(".bar")
+            barsGroup.selectAll(".bar")
                 .on("mouseover", function(event, d) {
                     d3.select(this)
                         .interrupt("scrubber")  // Cancel scrubber transitions
