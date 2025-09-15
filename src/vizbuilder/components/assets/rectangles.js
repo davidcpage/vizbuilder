@@ -107,7 +107,7 @@ define(['d3'], function(d3) {
     return chart;
     }
 
-    // Attach initSVG as a method to drawRectangles (like d3.select, d3.scale, etc.)
+    // Attach initSVG as a method to drawRectangles
     drawRectangles.initSVG = initSVG;
 
     // Return the main function with methods attached

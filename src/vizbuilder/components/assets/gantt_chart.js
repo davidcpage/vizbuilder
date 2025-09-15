@@ -11,6 +11,7 @@ define(['d3'], function(d3) {
     const dispatch = d3.dispatch("scrubberMove", "scrubberStart", "scrubberEnd");
 
     function chart(selection) {
+        console.log("** Rendering Again **");
         selection.each(function(data) {
             // Clear existing content
             const container = d3.select(this);
@@ -72,8 +73,6 @@ define(['d3'], function(d3) {
             // Apply zoom behavior to the SVG and set initial zoom
             svg.call(zoom)
             .call(zoom.transform, d3.zoomIdentity.translate(margin.left, margin.top)); // Set initial transform
-
-
 
             // Add plot area background
             g.append("rect")
@@ -305,7 +304,6 @@ define(['d3'], function(d3) {
             
             // Helper function to get mouse position relative to container
             function getRelativeMousePosition(event) {
-                const svgRect = svg.node().getBoundingClientRect();
                 const containerRect = container.node().getBoundingClientRect();
                 
                 return {
@@ -317,7 +315,6 @@ define(['d3'], function(d3) {
             // Helper function to position tooltip within bounds
             function positionTooltip(mousePos, tooltipNode) {
                 const tooltipRect = tooltipNode.getBoundingClientRect();
-                const containerRect = container.node().getBoundingClientRect();
                 
                 let x = mousePos.x + 15; // Offset from cursor
                 let y = mousePos.y - 10;

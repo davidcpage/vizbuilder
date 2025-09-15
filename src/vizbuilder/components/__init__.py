@@ -34,6 +34,14 @@ class _ComponentLoader:
     def data_display_data_uri(self):
         return f"data:text/javascript;base64,{base64.b64encode(self.data_display.encode()).decode()}"
 
+    def clear_cache(self):
+        """Clear all cached properties to force reloading from disk."""
+        # Clear cached_property cache by deleting the cached values
+        for attr_name in ['gantt_chart', 'rectangles', 'data_display',
+                         'rectangles_data_uri', 'gantt_chart_data_uri', 'data_display_data_uri']:
+            if hasattr(self, attr_name):
+                delattr(self, attr_name)
+
 
 _loader = _ComponentLoader()
 
@@ -42,7 +50,7 @@ rectangles = _loader.rectangles
 data_display = _loader.data_display
 
 
-def require(modules=None, config=None, user_code="",
+def require(modules=None, config=None, user_code="", clear_cache=False,
                     requirejs_cdn="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js"):
     """
     Generate JavaScript code that ensures RequireJS is available and then executes user code.
@@ -51,8 +59,13 @@ def require(modules=None, config=None, user_code="",
         modules: List of module names to load (None = all modules from config)
         config: RequireJS configuration object
         user_code: User's JavaScript code to execute
+        clear_cache: If True, clear both Python and RequireJS caches to force reload
         requirejs_cdn: CDN URL for RequireJS fallback
     """
+    # Clear Python cache if requested
+    if clear_cache:
+        _loader.clear_cache()
+
     if config is None:
         config = {
             "paths": {
@@ -76,9 +89,20 @@ def require(modules=None, config=None, user_code="",
     # If no modules specified, load all modules from config
     if modules is None:
         modules = list(config["paths"].keys())
+
     return f"""
 (function() {{
     function executeWithRequire() {{
+        {'// Clear RequireJS cache for local modules when cache clearing is requested' if clear_cache else ''}
+        {f'''if (typeof require.undef === 'function') {{
+            const localModules = ['drawRectangles', 'ganttChart', 'dataDisplay'];
+            localModules.forEach(function(moduleName) {{
+                if (require.s.contexts._.defined && require.s.contexts._.defined[moduleName]) {{
+                    require.undef(moduleName);
+                }}
+            }});
+        }}''' if clear_cache else ''}
+
         require.config({json.dumps(config)});
         require({json.dumps(modules)}, function({", ".join(modules)}) {{
             {user_code}
