@@ -2,11 +2,22 @@ define(['d3'], function(d3) {
     function ganttChart() {
     // Default configuration
     const margin = {top: 60, right: 40, bottom: 60, left: 60};
-    let width = null; 
+    let width = null;
     let height = 300;
     let padding = 0.2;
     let scrubberEnabled = true;
-    
+
+    // Presentation/styling options
+    let axisFontSize = 12;
+    let titleFontSize = 15;
+    let titleText = "timeline";
+    let xAxisLabel = "x-axis";
+    let yAxisLabel = "y-axis";
+    let showGridLines = true;
+    let categoryBackgroundOpacity = [0.3, 0.05]; // [even, odd] indices
+    let interactiveMode = true;
+    let colorScheme = null; // Can be an array of colors or null to use data colors
+
     // Event dispatcher for component communication
     const dispatch = d3.dispatch("scrubberMove", "scrubberStart", "scrubberEnd");
 
@@ -121,16 +132,22 @@ define(['d3'], function(d3) {
             const scrubberGroup = svg.append("g").attr("class", "scrubber-layer");
 
             // Create zoom behavior that affects both bars and scrubber layers
-            const zoom = d3.zoom()
-                .scaleExtent([0.1, 10])  // Set zoom scale limits
-                .on("zoom", function(event) {
-                    barsGroup.attr("transform", event.transform);
-                    scrubberGroup.attr("transform", event.transform);
-                });
+            if (interactiveMode) {
+                const zoom = d3.zoom()
+                    .scaleExtent([0.1, 10])  // Set zoom scale limits
+                    .on("zoom", function(event) {
+                        barsGroup.attr("transform", event.transform);
+                        scrubberGroup.attr("transform", event.transform);
+                    });
 
-            // Apply zoom behavior to the SVG and set initial zoom
-            svg.call(zoom)
-            .call(zoom.transform, d3.zoomIdentity.translate(margin.left, margin.top)); // Set initial transform
+                // Apply zoom behavior to the SVG and set initial zoom
+                svg.call(zoom)
+                .call(zoom.transform, d3.zoomIdentity.translate(margin.left, margin.top)); // Set initial transform
+            } else {
+                // No zoom, just apply initial transform
+                barsGroup.attr("transform", `translate(${margin.left},${margin.top})`);
+                scrubberGroup.attr("transform", `translate(${margin.left},${margin.top})`);
+            }
 
             // Add plot area background
             barsGroup.append("rect")
@@ -153,26 +170,30 @@ define(['d3'], function(d3) {
                     .attr("y", d => categoryScale(d))
                     .attr("width", inner_width)
                     .attr("height", d => categoryScale.bandwidth())
-                    .attr("fill", (d, i) => i % 2 === 0 ? "rgba(255, 255, 255, 0.3)" : "rgba(0, 0, 0, 0.05)")
+                    .attr("fill", (d, i) => i % 2 === 0 ?
+                        `rgba(255, 255, 255, ${categoryBackgroundOpacity[0]})` :
+                        `rgba(0, 0, 0, ${categoryBackgroundOpacity[1]})`)
                     .attr("stroke", "none");
             }
 
             // Add grid lines
-            const xGrid = d3.axisBottom(xScale)
-                .tickSize(-inner_height)
-                .tickFormat("")
-                .ticks(num_ticks)
-                .tickSizeOuter(0);
+            if (showGridLines) {
+                const xGrid = d3.axisBottom(xScale)
+                    .tickSize(-inner_height)
+                    .tickFormat("")
+                    .ticks(num_ticks)
+                    .tickSizeOuter(0);
 
-            barsGroup.append("g")
-                .attr("class", "grid")
-                .attr("transform", `translate(0,${inner_height})`)
-                .call(xGrid)
-                .call(g => g.selectAll(".domain").remove())
-                .selectAll("line")
-                .attr("class", "grid-line")
-                .attr("stroke", "white")
-                .attr("stroke-width", 3);
+                barsGroup.append("g")
+                    .attr("class", "grid")
+                    .attr("transform", `translate(0,${inner_height})`)
+                    .call(xGrid)
+                    .call(g => g.selectAll(".domain").remove())
+                    .selectAll("line")
+                    .attr("class", "grid-line")
+                    .attr("stroke", "white")
+                    .attr("stroke-width", 3);
+            }
 
             // Create axes
             const xAxisBottom = d3.axisBottom(xScale)
@@ -185,7 +206,7 @@ define(['d3'], function(d3) {
                 .attr("transform", `translate(0,${inner_height})`)
                 .call(xAxisBottom)
                 .call(g => g.selectAll(".domain").remove())
-                .call(g => g.selectAll("text").style("font-size", "12px"));
+                .call(g => g.selectAll("text").style("font-size", `${axisFontSize}px`));
 
             // Add Y axis
             if (hasSubcategories) {
@@ -208,7 +229,7 @@ define(['d3'], function(d3) {
                     .attr("x", -9)
                     .attr("dy", "0.32em")
                     .style("text-anchor", "end")
-                    .style("font-size", "12px")
+                    .style("font-size", `${axisFontSize}px`)
                     .text(d => d);
             } else {
                 // Original y-axis for non-subcategory data
@@ -219,10 +240,24 @@ define(['d3'], function(d3) {
                     .attr("class", "axis")
                     .call(yAxisLeft)
                     .call(g => g.selectAll(".domain").remove())
-                    .call(g => g.selectAll("text").style("font-size", "12px"));
+                    .call(g => g.selectAll("text").style("font-size", `${axisFontSize}px`));
             }
 
             // Add bars
+            // Apply color scheme if specified
+            let getBarColor;
+            if (colorScheme !== null) {
+                // Map categories to colors from the scheme
+                const categoryToColorIndex = new Map();
+                categories.forEach((cat, i) => {
+                    categoryToColorIndex.set(cat, i % colorScheme.length);
+                });
+                getBarColor = d => colorScheme[categoryToColorIndex.get(d.category)];
+            } else {
+                // Use colors from data
+                getBarColor = d => d.color;
+            }
+
             const bars = barsGroup.selectAll(".bar")
                 .data(data)
                 .enter()
@@ -232,17 +267,19 @@ define(['d3'], function(d3) {
                 .attr("y", d => hasSubcategories ? yScale(d) : yScale(d.category))
                 .attr("width", d => xScale(d.start + d.duration*0.99) - xScale(d.start))
                 .attr("height", d => hasSubcategories ? yScale.bandwidth(d) : yScale.bandwidth())
-                .attr("fill", d => d.color)
+                .attr("fill", getBarColor)
                 .attr("stroke", "none");
             
             // Add title to middle layer
-            titleGroup.append("text")
-                .attr("class", "title")
-                .attr("x", containerWidth / 2)
-                .attr("y", 25)
-                .attr("text-anchor", "middle")
-                .style("font-size", "15px")
-                .text("timeline");
+            if (titleText !== null) {
+                titleGroup.append("text")
+                    .attr("class", "title")
+                    .attr("x", containerWidth / 2)
+                    .attr("y", 25)
+                    .attr("text-anchor", "middle")
+                    .style("font-size", `${titleFontSize}px`)
+                    .text(titleText);
+            }
 
             // Store current scrubber position
             let currentScrubberX = inner_width * 0.3;
@@ -282,7 +319,8 @@ define(['d3'], function(d3) {
             }
 
             // Add horizontal scrubber
-            if (scrubberEnabled) {
+            // Scrubber requires interactiveMode to be enabled
+            if (scrubberEnabled && interactiveMode) {
                 
                 // Use the front layer scrubber group
                 
@@ -390,20 +428,26 @@ define(['d3'], function(d3) {
             
             
             // Add axis labels to middle layer
-            titleGroup.append("text")
-                .attr("class", "axis-label")
-                .attr("transform", "rotate(-90)")
-                .attr("y", 20)
-                .attr("x", -containerHeight / 2)
-                .style("text-anchor", "middle")
-                .text("y-axis");
+            if (yAxisLabel !== null) {
+                titleGroup.append("text")
+                    .attr("class", "axis-label")
+                    .attr("transform", "rotate(-90)")
+                    .attr("y", 20)
+                    .attr("x", -containerHeight / 2)
+                    .style("text-anchor", "middle")
+                    .style("font-size", `${axisFontSize}px`)
+                    .text(yAxisLabel);
+            }
 
-            titleGroup.append("text")
-                .attr("class", "axis-label")
-                .attr("x", containerWidth / 2)
-                .attr("y", containerHeight - 10)
-                .style("text-anchor", "middle")
-                .text("x-axis");
+            if (xAxisLabel !== null) {
+                titleGroup.append("text")
+                    .attr("class", "axis-label")
+                    .attr("x", containerWidth / 2)
+                    .attr("y", containerHeight - 10)
+                    .style("text-anchor", "middle")
+                    .style("font-size", `${axisFontSize}px`)
+                    .text(xAxisLabel);
+            }
             
             // Helper function to get mouse position relative to container
             function getRelativeMousePosition(event) {
@@ -441,8 +485,9 @@ define(['d3'], function(d3) {
             }
 
             // Add interactivity with tooltips
-            barsGroup.selectAll(".bar")
-                .on("mouseover", function(event, d) {
+            if (interactiveMode) {
+                barsGroup.selectAll(".bar")
+                    .on("mouseover", function(event, d) {
                     d3.select(this)
                         .interrupt("scrubber")  // Cancel scrubber transitions
                         .interrupt("hover")     // Cancel any existing hover transitions
@@ -451,10 +496,11 @@ define(['d3'], function(d3) {
                         .attr("stroke-width", 2);
                     
                     // Create enhanced tooltip content
+                    const barColor = getBarColor(d);
                     const tooltipContent = `
-                        <div style="border-left: 4px solid ${d.color}; padding-left: 12px;">
+                        <div style="border-left: 4px solid ${barColor}; padding-left: 12px;">
                             <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
-                                <div style="width: 12px; height: 12px; background-color: ${d.color}; border-radius: 2px;"></div>
+                                <div style="width: 12px; height: 12px; background-color: ${barColor}; border-radius: 2px;"></div>
                                 <div>
                                     <div style="font-weight: bold; font-size: 14px;">${d.category}</div>
                                     ${d.text ? `<div style="font-size: 12px; color: #ccc; font-style: italic;">${d.text}</div>` : ''}
@@ -511,7 +557,8 @@ define(['d3'], function(d3) {
                     tooltip.transition()
                         .duration(150)
                         .style("opacity", 0);
-                });
+                    });
+            }
         });
     }
     
@@ -535,6 +582,43 @@ define(['d3'], function(d3) {
     
     chart.height = function(_) {
         return arguments.length ? (height = _, chart) : height;
+    };
+
+    // Presentation/styling configuration methods
+    chart.axisFontSize = function(_) {
+        return arguments.length ? (axisFontSize = _, chart) : axisFontSize;
+    };
+
+    chart.titleFontSize = function(_) {
+        return arguments.length ? (titleFontSize = _, chart) : titleFontSize;
+    };
+
+    chart.title = function(_) {
+        return arguments.length ? (titleText = _, chart) : titleText;
+    };
+
+    chart.xAxisLabel = function(_) {
+        return arguments.length ? (xAxisLabel = _, chart) : xAxisLabel;
+    };
+
+    chart.yAxisLabel = function(_) {
+        return arguments.length ? (yAxisLabel = _, chart) : yAxisLabel;
+    };
+
+    chart.showGridLines = function(_) {
+        return arguments.length ? (showGridLines = _, chart) : showGridLines;
+    };
+
+    chart.categoryBackgroundOpacity = function(even, odd) {
+        return arguments.length ? (categoryBackgroundOpacity = [even, odd], chart) : categoryBackgroundOpacity;
+    };
+
+    chart.interactiveMode = function(_) {
+        return arguments.length ? (interactiveMode = _, chart) : interactiveMode;
+    };
+
+    chart.colorScheme = function(_) {
+        return arguments.length ? (colorScheme = _, chart) : colorScheme;
     };
 
     return chart;
