@@ -31,11 +31,63 @@ define(['d3'], function(d3) {
                 .domain([-xMax * 0.01, xMax * 1.01])
                 .range([0, inner_width]);
 
+            // Check if data has subcategories
+            const hasSubcategories = data.some(d => d.subcategory !== undefined);
+
+            // Get unique categories
             const categories = Array.from(new Set(data.map(d => d.category)));
-            const yScale = d3.scaleBand()
-                .domain(categories)
-                .range([inner_height, 0])
-                .padding(0.2);
+
+            let yScale, categoryScale, subcategoryScales;
+
+            if (hasSubcategories) {
+                // Create nested scales for categories and subcategories
+
+                // Group data by category to find subcategories for each
+                const categoryGroups = d3.group(data, d => d.category);
+                const subcategoriesPerCategory = new Map();
+                categoryGroups.forEach((items, category) => {
+                    const subcats = Array.from(new Set(items.map(d => d.subcategory)));
+                    subcategoriesPerCategory.set(category, subcats);
+                });
+
+                // Calculate total rows needed
+                const totalRows = Array.from(subcategoriesPerCategory.values())
+                    .reduce((sum, subcats) => sum + subcats.length, 0);
+
+                // Create category scale (outer scale)
+                categoryScale = d3.scaleBand()
+                    .domain(categories)
+                    .range([inner_height, 0]);
+                  //  .paddingOuter(0.1)
+                  //  .paddingInner(0.2);
+
+                // Create subcategory scales (inner scales) for each category
+                subcategoryScales = new Map();
+                categories.forEach(category => {
+                    const subcats = subcategoriesPerCategory.get(category);
+                    const scale = d3.scaleBand()
+                        .domain(subcats)
+                        .range([categoryScale.bandwidth(), 0])
+                        .padding(0.1);
+                    subcategoryScales.set(category, scale);
+                });
+
+                // Create combined yScale function for positioning bars
+                yScale = function(d) {
+                    const categoryY = categoryScale(d.category);
+                    const subcategoryY = subcategoryScales.get(d.category)(d.subcategory);
+                    return categoryY + subcategoryY;
+                };
+                yScale.bandwidth = function(d) {
+                    return subcategoryScales.get(d.category).bandwidth();
+                };
+            } else {
+                // Original single-level scale
+                yScale = d3.scaleBand()
+                    .domain(categories)
+                    .range([inner_height, 0])
+                    .padding(0.2);
+            }
 
             // Create tooltip within the container with relative positioning
             const tooltip = container.append("div")
@@ -87,6 +139,24 @@ define(['d3'], function(d3) {
                 .attr("height", inner_height)
                 .attr("fill", "#f0f1fa");
 
+            // Add alternating background rectangles for category groups (if subcategories exist)
+            if (hasSubcategories) {
+                const categoryBackgrounds = barsGroup.append("g")
+                    .attr("class", "category-backgrounds");
+
+                categoryBackgrounds.selectAll(".category-bg")
+                    .data(categories)
+                    .enter()
+                    .append("rect")
+                    .attr("class", "category-bg")
+                    .attr("x", 0)
+                    .attr("y", d => categoryScale(d))
+                    .attr("width", inner_width)
+                    .attr("height", d => categoryScale.bandwidth())
+                    .attr("fill", (d, i) => i % 2 === 0 ? "rgba(255, 255, 255, 0.3)" : "rgba(0, 0, 0, 0.05)")
+                    .attr("stroke", "none");
+            }
+
             // Add grid lines
             const xGrid = d3.axisBottom(xScale)
                 .tickSize(-inner_height)
@@ -108,8 +178,6 @@ define(['d3'], function(d3) {
             const xAxisBottom = d3.axisBottom(xScale)
                 .tickSize(0)
                 .ticks(num_ticks);
-            const yAxisLeft = d3.axisLeft(yScale)
-                .tickSize(0);
 
             // Add X axis
             barsGroup.append("g")
@@ -120,11 +188,39 @@ define(['d3'], function(d3) {
                 .call(g => g.selectAll("text").style("font-size", "12px"));
 
             // Add Y axis
-            barsGroup.append("g")
-                .attr("class", "axis")
-                .call(yAxisLeft)
-                .call(g => g.selectAll(".domain").remove())
-                .call(g => g.selectAll("text").style("font-size", "12px"));
+            if (hasSubcategories) {
+                // Custom y-axis with centered category labels
+                const yAxis = barsGroup.append("g")
+                    .attr("class", "axis");
+
+                yAxis.selectAll(".tick")
+                    .data(categories)
+                    .enter()
+                    .append("g")
+                    .attr("class", "tick")
+                    .attr("transform", d => {
+                        // Center label in the middle of the category group
+                        const categoryY = categoryScale(d);
+                        const categoryHeight = categoryScale.bandwidth();
+                        return `translate(0,${categoryY + categoryHeight / 2})`;
+                    })
+                    .append("text")
+                    .attr("x", -9)
+                    .attr("dy", "0.32em")
+                    .style("text-anchor", "end")
+                    .style("font-size", "12px")
+                    .text(d => d);
+            } else {
+                // Original y-axis for non-subcategory data
+                const yAxisLeft = d3.axisLeft(yScale)
+                    .tickSize(0);
+
+                barsGroup.append("g")
+                    .attr("class", "axis")
+                    .call(yAxisLeft)
+                    .call(g => g.selectAll(".domain").remove())
+                    .call(g => g.selectAll("text").style("font-size", "12px"));
+            }
 
             // Add bars
             const bars = barsGroup.selectAll(".bar")
@@ -133,9 +229,9 @@ define(['d3'], function(d3) {
                 .append("rect")
                 .attr("class", "bar")
                 .attr("x", d => xScale(d.start))
-                .attr("y", d => yScale(d.category))
+                .attr("y", d => hasSubcategories ? yScale(d) : yScale(d.category))
                 .attr("width", d => xScale(d.start + d.duration*0.99) - xScale(d.start))
-                .attr("height", yScale.bandwidth())
+                .attr("height", d => hasSubcategories ? yScale.bandwidth(d) : yScale.bandwidth())
                 .attr("fill", d => d.color)
                 .attr("stroke", "none");
             
