@@ -17,6 +17,10 @@ define(['d3'], function(d3) {
     let categoryBackgroundOpacity = [0.3, 0.05]; // [even, odd] indices
     let interactiveMode = true;
     let colorScheme = null; // Can be an array of colors or null to use data colors
+    let centerCategoryLabels = false; // If true, category labels are centered horizontally
+    let titleFontFamily = null; // Font family for title (e.g., "Virgil, sans-serif")
+    let axisFontFamily = null; // Font family for axis labels and ticks (e.g., "Virgil, sans-serif")
+    let fontUrl = null; // URL to load custom font (e.g., "https://excalidraw.com/Virgil.woff2")
 
     // Event dispatcher for component communication
     const dispatch = d3.dispatch("scrubberMove", "scrubberStart", "scrubberEnd");
@@ -27,6 +31,28 @@ define(['d3'], function(d3) {
             // Clear existing content
             const container = d3.select(this);
             container.selectAll('*').remove();
+
+            // Load custom font if specified
+            if (fontUrl) {
+                // Extract font family name from titleFontFamily or axisFontFamily
+                const fontFamily = (titleFontFamily || axisFontFamily || "").split(',')[0].trim().replace(/['"]/g, '');
+
+                // Check if font is already loaded
+                const fontId = `font-${fontFamily.replace(/\s+/g, '-')}`;
+                if (!document.getElementById(fontId)) {
+                    const style = document.createElement('style');
+                    style.id = fontId;
+                    style.textContent = `
+                        @font-face {
+                            font-family: "${fontFamily}";
+                            src: url("${fontUrl}") format("woff2");
+                            font-weight: normal;
+                            font-style: normal;
+                        }
+                    `;
+                    document.head.appendChild(style);
+                }
+            }
             
             const containerRect = container.node().getBoundingClientRect();
             const containerWidth = width || containerRect.width;
@@ -206,7 +232,12 @@ define(['d3'], function(d3) {
                 .attr("transform", `translate(0,${inner_height})`)
                 .call(xAxisBottom)
                 .call(g => g.selectAll(".domain").remove())
-                .call(g => g.selectAll("text").style("font-size", `${axisFontSize}px`));
+                .call(g => {
+                    g.selectAll("text").style("font-size", `${axisFontSize}px`);
+                    if (axisFontFamily) {
+                        g.selectAll("text").style("font-family", axisFontFamily);
+                    }
+                });
 
             // Add Y axis
             if (hasSubcategories) {
@@ -226,10 +257,11 @@ define(['d3'], function(d3) {
                         return `translate(0,${categoryY + categoryHeight / 2})`;
                     })
                     .append("text")
-                    .attr("x", -9)
+                    .attr("x", centerCategoryLabels ? -75 : -9)
                     .attr("dy", "0.32em")
-                    .style("text-anchor", "end")
+                    .style("text-anchor", centerCategoryLabels ? "middle" : "end")
                     .style("font-size", `${axisFontSize}px`)
+                    .style("font-family", axisFontFamily || null)
                     .text(d => d);
             } else {
                 // Original y-axis for non-subcategory data
@@ -240,7 +272,15 @@ define(['d3'], function(d3) {
                     .attr("class", "axis")
                     .call(yAxisLeft)
                     .call(g => g.selectAll(".domain").remove())
-                    .call(g => g.selectAll("text").style("font-size", `${axisFontSize}px`));
+                    .call(g => {
+                        const textElements = g.selectAll("text")
+                            .style("font-size", `${axisFontSize}px`)
+                            .attr("x", centerCategoryLabels ? -20 : null)
+                            .style("text-anchor", centerCategoryLabels ? "middle" : null);
+                        if (axisFontFamily) {
+                            textElements.style("font-family", axisFontFamily);
+                        }
+                    });
             }
 
             // Add bars
@@ -272,13 +312,17 @@ define(['d3'], function(d3) {
             
             // Add title to middle layer
             if (titleText !== null) {
-                titleGroup.append("text")
+                const titleElement = titleGroup.append("text")
                     .attr("class", "title")
                     .attr("x", containerWidth / 2)
                     .attr("y", 25)
                     .attr("text-anchor", "middle")
                     .style("font-size", `${titleFontSize}px`)
                     .text(titleText);
+
+                if (titleFontFamily) {
+                    titleElement.style("font-family", titleFontFamily);
+                }
             }
 
             // Store current scrubber position
@@ -429,7 +473,7 @@ define(['d3'], function(d3) {
             
             // Add axis labels to middle layer
             if (yAxisLabel !== null) {
-                titleGroup.append("text")
+                const yLabel = titleGroup.append("text")
                     .attr("class", "axis-label")
                     .attr("transform", "rotate(-90)")
                     .attr("y", 20)
@@ -437,16 +481,22 @@ define(['d3'], function(d3) {
                     .style("text-anchor", "middle")
                     .style("font-size", `${axisFontSize}px`)
                     .text(yAxisLabel);
+                if (axisFontFamily) {
+                    yLabel.style("font-family", axisFontFamily);
+                }
             }
 
             if (xAxisLabel !== null) {
-                titleGroup.append("text")
+                const xLabel = titleGroup.append("text")
                     .attr("class", "axis-label")
                     .attr("x", containerWidth / 2)
                     .attr("y", containerHeight - 10)
                     .style("text-anchor", "middle")
                     .style("font-size", `${axisFontSize}px`)
                     .text(xAxisLabel);
+                if (axisFontFamily) {
+                    xLabel.style("font-family", axisFontFamily);
+                }
             }
             
             // Helper function to get mouse position relative to container
@@ -619,6 +669,22 @@ define(['d3'], function(d3) {
 
     chart.colorScheme = function(_) {
         return arguments.length ? (colorScheme = _, chart) : colorScheme;
+    };
+
+    chart.centerCategoryLabels = function(_) {
+        return arguments.length ? (centerCategoryLabels = _, chart) : centerCategoryLabels;
+    };
+
+    chart.titleFontFamily = function(_) {
+        return arguments.length ? (titleFontFamily = _, chart) : titleFontFamily;
+    };
+
+    chart.axisFontFamily = function(_) {
+        return arguments.length ? (axisFontFamily = _, chart) : axisFontFamily;
+    };
+
+    chart.fontUrl = function(_) {
+        return arguments.length ? (fontUrl = _, chart) : fontUrl;
     };
 
     return chart;
