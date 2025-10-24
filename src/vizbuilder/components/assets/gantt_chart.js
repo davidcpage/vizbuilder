@@ -40,17 +40,28 @@ define(['d3'], function(d3) {
                 // Check if font is already loaded
                 const fontId = `font-${fontFamily.replace(/\s+/g, '-')}`;
                 if (!document.getElementById(fontId)) {
-                    const style = document.createElement('style');
-                    style.id = fontId;
-                    style.textContent = `
-                        @font-face {
-                            font-family: "${fontFamily}";
-                            src: url("${fontUrl}") format("woff2");
-                            font-weight: normal;
-                            font-style: normal;
-                        }
-                    `;
-                    document.head.appendChild(style);
+                    // Check if fontUrl is a CSS file (like Google Fonts) or a direct font file
+                    if (fontUrl.includes('.css') || fontUrl.includes('fonts.googleapis.com')) {
+                        // Load CSS file (e.g., Google Fonts)
+                        const link = document.createElement('link');
+                        link.id = fontId;
+                        link.rel = 'stylesheet';
+                        link.href = fontUrl;
+                        document.head.appendChild(link);
+                    } else {
+                        // Direct font file (e.g., .woff2)
+                        const style = document.createElement('style');
+                        style.id = fontId;
+                        style.textContent = `
+                            @font-face {
+                                font-family: "${fontFamily}";
+                                src: url("${fontUrl}") format("woff2");
+                                font-weight: normal;
+                                font-style: normal;
+                            }
+                        `;
+                        document.head.appendChild(style);
+                    }
                 }
             }
             
