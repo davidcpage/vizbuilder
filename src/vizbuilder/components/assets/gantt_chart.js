@@ -189,14 +189,14 @@ define(['d3'], function(d3) {
      * @param {d3.Selection} group - SVG group to add grid to
      * @param {d3.Scale} xScale - X-axis scale
      * @param {number} innerHeight - Chart inner height
-     * @param {number} numTicks - Number of tick marks
+     * @param {Object} config - Configuration object with { numXTicks }
      * @returns {void}
      */
-    function addGridLines(group, xScale, innerHeight, numTicks) {
+    function addGridLines(group, xScale, innerHeight, { numXTicks }) {
         const xGrid = d3.axisBottom(xScale)
             .tickSize(-innerHeight)
             .tickFormat("")
-            .ticks(numTicks)
+            .ticks(numXTicks)
             .tickSizeOuter(0);
 
         group.append("g")
@@ -216,10 +216,11 @@ define(['d3'], function(d3) {
      * @param {Array} categories - Category labels
      * @param {d3.Scale} categoryScale - Category scale
      * @param {number} innerWidth - Chart inner width
-     * @param {Array} opacities - [even, odd] opacity values
+     * @param {Object} config - Configuration object with { categoryBackgroundOpacity }
      * @returns {void}
      */
-    function addCategoryBackgrounds(group, categories, categoryScale, innerWidth, opacities) {
+    function addCategoryBackgrounds(group, categories, categoryScale, innerWidth, { categoryBackgroundOpacity }) {
+        const opacities = categoryBackgroundOpacity;
         const categoryBackgrounds = group.append("g")
             .attr("class", "category-backgrounds");
 
@@ -243,12 +244,11 @@ define(['d3'], function(d3) {
      * @param {d3.Selection} group - SVG group for axis
      * @param {Object} scaleInfo - Object containing yScale, categoryScale, subcategoryScales, hasSubcategories
      * @param {Array} categories - Category labels
-     * @param {Object} options - { axisFontSize, fontFamily, centerCategoryLabels }
+     * @param {Object} config - Configuration object with { axisFontSize, fontFamily, centerCategoryLabels }
      * @returns {void}
      */
-    function renderYAxis(group, scaleInfo, categories, options) {
+    function renderYAxis(group, scaleInfo, categories, { axisFontSize, fontFamily, centerCategoryLabels }) {
         const { yScale, categoryScale, hasSubcategories } = scaleInfo;
-        const { axisFontSize, fontFamily, centerCategoryLabels } = options;
 
         if (hasSubcategories) {
             // Custom y-axis with centered category labels
@@ -364,15 +364,12 @@ define(['d3'], function(d3) {
     /**
      * Adds axis labels to the chart
      * @param {d3.Selection} group - SVG group for labels
-     * @param {Object} labels - { xAxisLabel, yAxisLabel }
-     * @param {Object} dimensions - { containerWidth, containerHeight }
-     * @param {Object} styling - { axisFontSize, fontFamily }
+     * @param {number} containerWidth - Container width
+     * @param {number} containerHeight - Container height
+     * @param {Object} config - Configuration object with { xAxisLabel, yAxisLabel, axisFontSize, fontFamily }
      * @returns {void}
      */
-    function addAxisLabels(group, labels, dimensions, styling) {
-        const { xAxisLabel, yAxisLabel } = labels;
-        const { containerWidth, containerHeight } = dimensions;
-        const { axisFontSize, fontFamily } = styling;
+    function addAxisLabels(group, containerWidth, containerHeight, { xAxisLabel, yAxisLabel, axisFontSize, fontFamily }) {
 
         if (yAxisLabel !== null) {
             const yLabel = group.append("text")
@@ -521,14 +518,13 @@ define(['d3'], function(d3) {
      * @param {d3.Selection} group - SVG group for axis
      * @param {d3.Scale} xScale - X-axis scale
      * @param {number} innerHeight - Chart inner height
-     * @param {Object} options - { numTicks, axisFontSize, fontFamily }
+     * @param {Object} config - Configuration object with { numXTicks, axisFontSize, fontFamily }
      * @returns {void}
      */
-    function renderXAxis(group, xScale, innerHeight, options) {
-        const { numTicks, axisFontSize, fontFamily } = options;
+    function renderXAxis(group, xScale, innerHeight, { numXTicks, axisFontSize, fontFamily }) {
         const xAxisBottom = d3.axisBottom(xScale)
             .tickSize(0)
-            .ticks(numTicks);
+            .ticks(numXTicks);
 
         group.append("g")
             .attr("class", "axis")
@@ -598,13 +594,11 @@ define(['d3'], function(d3) {
     /**
      * Renders chart title
      * @param {d3.Selection} group - SVG group for title
-     * @param {string|null} title - Title text
      * @param {number} containerWidth - Container width for centering
-     * @param {Object} options - { titleFontSize, fontFamily }
+     * @param {Object} config - Configuration object with { title, titleFontSize, fontFamily }
      * @returns {void}
      */
-    function renderTitle(group, title, containerWidth, options) {
-        const { titleFontSize, fontFamily } = options;
+    function renderTitle(group, containerWidth, { title, titleFontSize, fontFamily }) {
 
         if (title !== null) {
             const titleElement = group.append("text")
@@ -706,6 +700,7 @@ define(['d3'], function(d3) {
         title: "timeline",
         xAxisLabel: "x-axis",
         yAxisLabel: "y-axis",
+        numXTicks: 8, // Number of ticks on X-axis
         showGridLines: true,
         categoryBackgroundOpacity: [0.3, 0.05], // [even, odd] indices
         interactiveMode: true,
@@ -733,8 +728,6 @@ define(['d3'], function(d3) {
             const containerHeight = config.height;
             const inner_width = Math.max(100, containerWidth - margin.left - margin.right);
             const inner_height = Math.max(100, containerHeight - margin.top - margin.bottom);
-            
-            const num_ticks = 8;
 
             // Scales
             const xScale = createXScale(data, inner_width);
@@ -775,20 +768,20 @@ define(['d3'], function(d3) {
 
             // Add alternating background rectangles for category groups (if subcategories exist)
             if (hasSubcategories) {
-                addCategoryBackgrounds(barsGroup, categories, categoryScale, inner_width, config.categoryBackgroundOpacity);
+                addCategoryBackgrounds(barsGroup, categories, categoryScale, inner_width, config);
             }
 
             // Add grid lines
             if (config.showGridLines) {
-                addGridLines(barsGroup, xScale, inner_height, num_ticks);
+                addGridLines(barsGroup, xScale, inner_height, config);
             }
 
             // Add X axis
-            renderXAxis(barsGroup, xScale, inner_height, { numTicks: num_ticks, axisFontSize: config.axisFontSize, fontFamily: config.fontFamily });
+            renderXAxis(barsGroup, xScale, inner_height, config);
 
             // Add Y axis
             const scaleInfo = { yScale, categoryScale, subcategoryScales, hasSubcategories };
-            renderYAxis(barsGroup, scaleInfo, categories, { axisFontSize: config.axisFontSize, fontFamily: config.fontFamily, centerCategoryLabels: config.centerCategoryLabels });
+            renderYAxis(barsGroup, scaleInfo, categories, config);
 
             // Add bars
             const getBarColor = createColorMapper(config.colorScheme, categories);
@@ -796,7 +789,7 @@ define(['d3'], function(d3) {
             const bars = renderBars(barsGroup, data, xScale, scaleInfoForBars, getBarColor);
 
             // Add title to middle layer
-            renderTitle(titleGroup, config.title, containerWidth, { titleFontSize: config.titleFontSize, fontFamily: config.fontFamily });
+            renderTitle(titleGroup, containerWidth, config);
 
             // Store current scrubber position for bar interactivity
             let currentScrubberX = inner_width * 0.3;
@@ -828,7 +821,7 @@ define(['d3'], function(d3) {
             
 
             // Add axis labels to middle layer
-            addAxisLabels(titleGroup, { xAxisLabel: config.xAxisLabel, yAxisLabel: config.yAxisLabel }, { containerWidth, containerHeight }, { axisFontSize: config.axisFontSize, fontFamily: config.fontFamily });
+            addAxisLabels(titleGroup, containerWidth, containerHeight, config);
             
             // Helper function to get mouse position relative to container
             function getRelativeMousePosition(event) {
