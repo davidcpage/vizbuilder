@@ -41,6 +41,45 @@ define(['d3'], function(d3) {
     }
 
     /**
+     * Creates X-axis scale based on data range
+     * @param {Array} data - Chart data
+     * @param {number} innerWidth - Available width for chart
+     * @returns {d3.Scale} Linear scale for X-axis
+     */
+    function createXScale(data, innerWidth) {
+        const xMax = d3.max(data, d => d.start + d.duration);
+        return d3.scaleLinear()
+            .domain([-xMax * 0.01, xMax * 1.01])
+            .range([0, innerWidth]);
+    }
+
+    /**
+     * Renders the X-axis with support for custom fonts
+     * @param {d3.Selection} group - SVG group for axis
+     * @param {d3.Scale} xScale - X-axis scale
+     * @param {number} innerHeight - Chart inner height
+     * @param {Object} config - Configuration object with { numXTicks, axisFontSize, fontFamily }
+     * @returns {void}
+     */
+    function renderXAxis(group, xScale, innerHeight, { numXTicks, axisFontSize, fontFamily }) {
+        const xAxisBottom = d3.axisBottom(xScale)
+            .tickSize(0)
+            .ticks(numXTicks);
+
+        group.append("g")
+            .attr("class", "axis")
+            .attr("transform", `translate(0,${innerHeight})`)
+            .call(xAxisBottom)
+            .call(g => g.selectAll(".domain").remove())
+            .call(g => {
+                g.selectAll("text").style("font-size", `${axisFontSize}px`);
+                if (fontFamily) {
+                    g.selectAll("text").style("font-family", fontFamily);
+                }
+            });
+    }
+
+    /**
      * Creates appropriate y-axis scale(s) based on data structure
      * @param {Array} data - Chart data
      * @param {number} innerHeight - Available height for chart
@@ -102,91 +141,7 @@ define(['d3'], function(d3) {
         }
     }
 
-    /**
-     * Creates and configures a tooltip element
-     * @param {d3.Selection} container - D3 selection of container element
-     * @returns {d3.Selection} Configured tooltip selection
-     */
-    function createTooltip(container) {
-        return container.append("div")
-            .attr("class", "gantt-tooltip")
-            .style("position", "absolute")
-            .style("background", "rgba(0, 0, 0, 0.9)")
-            .style("color", "white")
-            .style("padding", "12px")
-            .style("border-radius", "6px")
-            .style("font-size", "12px")
-            .style("pointer-events", "none")
-            .style("opacity", 0)
-            .style("z-index", 10000)
-            .style("box-shadow", "0 4px 8px rgba(0,0,0,0.3)")
-            .style("max-width", "250px")
-            .style("word-wrap", "break-word");
-    }
-
-    /**
-     * Positions tooltip within container bounds
-     * @param {Object} mousePos - {x, y} mouse position
-     * @param {DOMRect} tooltipRect - Tooltip bounding rect
-     * @param {number} containerWidth - Container width
-     * @param {number} containerHeight - Container height
-     * @returns {Object} {x, y} position for tooltip
-     */
-    function positionTooltip(mousePos, tooltipRect, containerWidth, containerHeight) {
-        let x = mousePos.x + 15; // Offset from cursor
-        let y = mousePos.y - 10;
-
-        // Keep tooltip within container bounds
-        if (x + tooltipRect.width > containerWidth) {
-            x = mousePos.x - tooltipRect.width - 15;
-        }
-        if (y < 0) {
-            y = mousePos.y + 25;
-        }
-        if (y + tooltipRect.height > containerHeight) {
-            y = containerHeight - tooltipRect.height - 10;
-        }
-
-        // Ensure minimum distance from edges
-        x = Math.max(5, Math.min(x, containerWidth - tooltipRect.width - 5));
-        y = Math.max(5, Math.min(y, containerHeight - tooltipRect.height - 5));
-
-        return { x, y };
-    }
-
-    /**
-     * Generates HTML content for tooltip
-     * @param {Object} d - Data point
-     * @param {Function} getBarColor - Function to get bar color
-     * @returns {string} HTML string for tooltip content
-     */
-    function generateTooltipContent(d, getBarColor) {
-        const barColor = getBarColor(d);
-        return `
-            <div style="border-left: 4px solid ${barColor}; padding-left: 12px;">
-                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
-                    <div style="width: 12px; height: 12px; background-color: ${barColor}; border-radius: 2px;"></div>
-                    <div>
-                        <div style="font-weight: bold; font-size: 14px;">${d.category}</div>
-                        ${d.text ? `<div style="font-size: 12px; color: #ccc; font-style: italic;">${d.text}</div>` : ''}
-                    </div>
-                </div>
-
-                <div style="display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; font-size: 12px;">
-                    <span style="color: #ccc;">🕐 Start:</span>
-                    <strong>${Math.round(d.start).toLocaleString()}</strong>
-
-                    <span style="color: #ccc;">🕐 Duration:</span>
-                    <strong>${Math.round(d.duration).toLocaleString()}</strong>
-
-                    <span style="color: #ccc;">🕐 End:</span>
-                    <strong>${Math.round(d.start + d.duration).toLocaleString()}</strong>
-                </div>
-            </div>
-        `;
-    }
-
-    /**
+/**
      * Adds grid lines to the chart
      * @param {d3.Selection} group - SVG group to add grid to
      * @param {d3.Scale} xScale - X-axis scale
@@ -315,7 +270,92 @@ define(['d3'], function(d3) {
         }
     }
 
+
     /**
+     * Creates and configures a tooltip element
+     * @param {d3.Selection} container - D3 selection of container element
+     * @returns {d3.Selection} Configured tooltip selection
+     */
+    function createTooltip(container) {
+        return container.append("div")
+            .attr("class", "gantt-tooltip")
+            .style("position", "absolute")
+            .style("background", "rgba(0, 0, 0, 0.9)")
+            .style("color", "white")
+            .style("padding", "12px")
+            .style("border-radius", "6px")
+            .style("font-size", "12px")
+            .style("pointer-events", "none")
+            .style("opacity", 0)
+            .style("z-index", 10000)
+            .style("box-shadow", "0 4px 8px rgba(0,0,0,0.3)")
+            .style("max-width", "250px")
+            .style("word-wrap", "break-word");
+    }
+
+    /**
+     * Positions tooltip within container bounds
+     * @param {Object} mousePos - {x, y} mouse position
+     * @param {DOMRect} tooltipRect - Tooltip bounding rect
+     * @param {number} containerWidth - Container width
+     * @param {number} containerHeight - Container height
+     * @returns {Object} {x, y} position for tooltip
+     */
+    function positionTooltip(mousePos, tooltipRect, containerWidth, containerHeight) {
+        let x = mousePos.x + 15; // Offset from cursor
+        let y = mousePos.y - 10;
+
+        // Keep tooltip within container bounds
+        if (x + tooltipRect.width > containerWidth) {
+            x = mousePos.x - tooltipRect.width - 15;
+        }
+        if (y < 0) {
+            y = mousePos.y + 25;
+        }
+        if (y + tooltipRect.height > containerHeight) {
+            y = containerHeight - tooltipRect.height - 10;
+        }
+
+        // Ensure minimum distance from edges
+        x = Math.max(5, Math.min(x, containerWidth - tooltipRect.width - 5));
+        y = Math.max(5, Math.min(y, containerHeight - tooltipRect.height - 5));
+
+        return { x, y };
+    }
+
+    /**
+     * Generates HTML content for tooltip
+     * @param {Object} d - Data point
+     * @param {Function} getBarColor - Function to get bar color
+     * @returns {string} HTML string for tooltip content
+     */
+    function generateTooltipContent(d, getBarColor) {
+        const barColor = getBarColor(d);
+        return `
+            <div style="border-left: 4px solid ${barColor}; padding-left: 12px;">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+                    <div style="width: 12px; height: 12px; background-color: ${barColor}; border-radius: 2px;"></div>
+                    <div>
+                        <div style="font-weight: bold; font-size: 14px;">${d.category}</div>
+                        ${d.text ? `<div style="font-size: 12px; color: #ccc; font-style: italic;">${d.text}</div>` : ''}
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; font-size: 12px;">
+                    <span style="color: #ccc;">🕐 Start:</span>
+                    <strong>${Math.round(d.start).toLocaleString()}</strong>
+
+                    <span style="color: #ccc;">🕐 Duration:</span>
+                    <strong>${Math.round(d.duration).toLocaleString()}</strong>
+
+                    <span style="color: #ccc;">🕐 End:</span>
+                    <strong>${Math.round(d.start + d.duration).toLocaleString()}</strong>
+                </div>
+            </div>
+        `;
+    }
+
+        /**
      * Checks if timeline entry intersects with scrubber position
      * @param {Object} d - Data point with start and duration
      * @param {number} scrubberPosition - Scrubber position in pixels
@@ -502,45 +542,6 @@ define(['d3'], function(d3) {
     }
 
     /**
-     * Creates X-axis scale based on data range
-     * @param {Array} data - Chart data
-     * @param {number} innerWidth - Available width for chart
-     * @returns {d3.Scale} Linear scale for X-axis
-     */
-    function createXScale(data, innerWidth) {
-        const xMax = d3.max(data, d => d.start + d.duration);
-        return d3.scaleLinear()
-            .domain([-xMax * 0.01, xMax * 1.01])
-            .range([0, innerWidth]);
-    }
-
-    /**
-     * Renders the X-axis with support for custom fonts
-     * @param {d3.Selection} group - SVG group for axis
-     * @param {d3.Scale} xScale - X-axis scale
-     * @param {number} innerHeight - Chart inner height
-     * @param {Object} config - Configuration object with { numXTicks, axisFontSize, fontFamily }
-     * @returns {void}
-     */
-    function renderXAxis(group, xScale, innerHeight, { numXTicks, axisFontSize, fontFamily }) {
-        const xAxisBottom = d3.axisBottom(xScale)
-            .tickSize(0)
-            .ticks(numXTicks);
-
-        group.append("g")
-            .attr("class", "axis")
-            .attr("transform", `translate(0,${innerHeight})`)
-            .call(xAxisBottom)
-            .call(g => g.selectAll(".domain").remove())
-            .call(g => {
-                g.selectAll("text").style("font-size", `${axisFontSize}px`);
-                if (fontFamily) {
-                    g.selectAll("text").style("font-family", fontFamily);
-                }
-            });
-    }
-
-    /**
      * Sets up zoom behavior for interactive chart navigation
      * @param {d3.Selection} svg - SVG element
      * @param {Object} targetGroups - { barsGroup, scrubberGroup } to be transformed
@@ -579,6 +580,18 @@ define(['d3'], function(d3) {
     function renderBars(group, data, xScale, scaleInfo, getBarColor) {
         const { yScale, subcategoryScales } = scaleInfo;
         const hasSubcategories = subcategoryScales !== null;
+    
+        // Add text labels on bars
+        //group.selectAll(".bar-text")
+        //    .data(data.filter(d => d.text !== ""))
+        //    .enter()
+        //    .append("text")
+        //    .attr("class", "bar-text")
+        //    .attr("x", d => xScale(d.start + d.duration / 2))
+        //    .attr("y", d => yScale(d.category) + yScale.bandwidth() / 2)
+        //    .attr("text-anchor", "middle")
+        //   .attr("dominant-baseline", "middle")
+        //    .text(d => d.text);
 
         return group.selectAll(".bar")
             .data(data)
@@ -805,18 +818,6 @@ define(['d3'], function(d3) {
                     intersectedData: data  // All data when no scrubber
                 });
             }
-            
-            // Add text labels on bars
-            //g.selectAll(".bar-text")
-            //    .data(data.filter(d => d.text !== ""))
-            //    .enter()
-            //    .append("text")
-            //    .attr("class", "bar-text")
-            //    .attr("x", d => xScale(d.start + d.duration / 2))
-            //    .attr("y", d => yScale(d.category) + yScale.bandwidth() / 2)
-            //    .attr("text-anchor", "middle")
-             //   .attr("dominant-baseline", "middle")
-            //    .text(d => d.text);
             
 
             // Add axis labels to middle layer
