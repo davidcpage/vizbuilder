@@ -43,11 +43,13 @@ define(['d3'], function(d3) {
     /**
      * Creates appropriate y-axis scale(s) based on data structure
      * @param {Array} data - Chart data
-     * @param {Array} categories - Unique categories
      * @param {number} innerHeight - Available height for chart
-     * @returns {Object} { yScale, categoryScale, subcategoryScales, hasSubcategories }
+     * @returns {Object} { yScale, categoryScale, subcategoryScales }
      */
-    function createYScale(data, categories, innerHeight) {
+    function createYScale(data, innerHeight) {
+        // Extract unique categories from data
+        const categories = Array.from(new Set(data.map(d => d.category)));
+
         // Check if data has subcategories
         const hasSubcategories = data.some(d => d.subcategory !== undefined);
 
@@ -88,15 +90,15 @@ define(['d3'], function(d3) {
                 return subcategoryScales.get(d.category).bandwidth();
             };
 
-            return { yScale, categoryScale, subcategoryScales, hasSubcategories: true };
+            return { yScale, categoryScale, subcategoryScales };
         } else {
-            // Original single-level scale
-            const yScale = d3.scaleBand()
+            // Single-level scale
+            const categoryScale = d3.scaleBand()
                 .domain(categories)
                 .range([innerHeight, 0])
                 .padding(0.2);
 
-            return { yScale, categoryScale: null, subcategoryScales: null, hasSubcategories: false };
+            return { yScale: categoryScale, categoryScale, subcategoryScales: null };
         }
     }
 
@@ -213,19 +215,18 @@ define(['d3'], function(d3) {
     /**
      * Adds alternating background rectangles for category groups
      * @param {d3.Selection} group - SVG group to add backgrounds to
-     * @param {Array} categories - Category labels
      * @param {d3.Scale} categoryScale - Category scale
      * @param {number} innerWidth - Chart inner width
      * @param {Object} config - Configuration object with { categoryBackgroundOpacity }
      * @returns {void}
      */
-    function addCategoryBackgrounds(group, categories, categoryScale, innerWidth, { categoryBackgroundOpacity }) {
+    function addCategoryBackgrounds(group, categoryScale, innerWidth, { categoryBackgroundOpacity }) {
         const opacities = categoryBackgroundOpacity;
         const categoryBackgrounds = group.append("g")
             .attr("class", "category-backgrounds");
 
         categoryBackgrounds.selectAll(".category-bg")
-            .data(categories)
+            .data(categoryScale.domain())
             .enter()
             .append("rect")
             .attr("class", "category-bg")
@@ -242,13 +243,13 @@ define(['d3'], function(d3) {
     /**
      * Renders the Y-axis with support for simple or nested categories
      * @param {d3.Selection} group - SVG group for axis
-     * @param {Object} scaleInfo - Object containing yScale, categoryScale, subcategoryScales, hasSubcategories
-     * @param {Array} categories - Category labels
+     * @param {Object} scaleInfo - Object containing yScale, categoryScale, subcategoryScales
      * @param {Object} config - Configuration object with { axisFontSize, fontFamily, centerCategoryLabels }
      * @returns {void}
      */
-    function renderYAxis(group, scaleInfo, categories, { axisFontSize, fontFamily, centerCategoryLabels }) {
-        const { yScale, categoryScale, hasSubcategories } = scaleInfo;
+    function renderYAxis(group, scaleInfo, { axisFontSize, fontFamily, centerCategoryLabels }) {
+        const { yScale, categoryScale, subcategoryScales } = scaleInfo;
+        const hasSubcategories = subcategoryScales !== null;
 
         if (hasSubcategories) {
             // Custom y-axis with centered category labels
@@ -256,7 +257,7 @@ define(['d3'], function(d3) {
                 .attr("class", "axis");
 
             yAxis.selectAll(".tick")
-                .data(categories)
+                .data(categoryScale.domain())
                 .enter()
                 .append("g")
                 .attr("class", "tick")
@@ -297,14 +298,14 @@ define(['d3'], function(d3) {
     /**
      * Creates a function to determine bar colors
      * @param {Array|null} colorScheme - Array of colors or null to use data colors
-     * @param {Array} categories - Category labels
+     * @param {d3.Scale} categoryScale - Category scale (used to get category order)
      * @returns {Function} Function that takes data point and returns color
      */
-    function createColorMapper(colorScheme, categories) {
+    function createColorMapper(colorScheme, categoryScale) {
         if (colorScheme !== null) {
             // Map categories to colors from the scheme
             const categoryToColorIndex = new Map();
-            categories.forEach((cat, i) => {
+            categoryScale.domain().forEach((cat, i) => {
                 categoryToColorIndex.set(cat, i % colorScheme.length);
             });
             return d => colorScheme[categoryToColorIndex.get(d.category)];
@@ -571,12 +572,13 @@ define(['d3'], function(d3) {
      * @param {d3.Selection} group - SVG group for bars
      * @param {Array} data - Chart data
      * @param {d3.Scale} xScale - X-axis scale
-     * @param {Object} scaleInfo - { yScale, hasSubcategories }
+     * @param {Object} scaleInfo - { yScale, subcategoryScales }
      * @param {Function} getBarColor - Function to get bar color
      * @returns {d3.Selection} Selection of bar elements
      */
     function renderBars(group, data, xScale, scaleInfo, getBarColor) {
-        const { yScale, hasSubcategories } = scaleInfo;
+        const { yScale, subcategoryScales } = scaleInfo;
+        const hasSubcategories = subcategoryScales !== null;
 
         return group.selectAll(".bar")
             .data(data)
@@ -732,11 +734,8 @@ define(['d3'], function(d3) {
             // Scales
             const xScale = createXScale(data, inner_width);
 
-            // Get unique categories
-            const categories = Array.from(new Set(data.map(d => d.category)));
-
             // Create Y scale(s)
-            const { yScale, categoryScale, subcategoryScales, hasSubcategories } = createYScale(data, categories, inner_height);
+            const { yScale, categoryScale, subcategoryScales } = createYScale(data, inner_height);
 
             // Create tooltip within the container with relative positioning
             const tooltip = createTooltip(container);
@@ -767,8 +766,8 @@ define(['d3'], function(d3) {
                 .attr("fill", "#f0f1fa");
 
             // Add alternating background rectangles for category groups (if subcategories exist)
-            if (hasSubcategories) {
-                addCategoryBackgrounds(barsGroup, categories, categoryScale, inner_width, config);
+            if (subcategoryScales !== null) {
+                addCategoryBackgrounds(barsGroup, categoryScale, inner_width, config);
             }
 
             // Add grid lines
@@ -780,12 +779,12 @@ define(['d3'], function(d3) {
             renderXAxis(barsGroup, xScale, inner_height, config);
 
             // Add Y axis
-            const scaleInfo = { yScale, categoryScale, subcategoryScales, hasSubcategories };
-            renderYAxis(barsGroup, scaleInfo, categories, config);
+            const scaleInfo = { yScale, categoryScale, subcategoryScales };
+            renderYAxis(barsGroup, scaleInfo, config);
 
             // Add bars
-            const getBarColor = createColorMapper(config.colorScheme, categories);
-            const scaleInfoForBars = { yScale, hasSubcategories };
+            const getBarColor = createColorMapper(config.colorScheme, categoryScale);
+            const scaleInfoForBars = { yScale, subcategoryScales };
             const bars = renderBars(barsGroup, data, xScale, scaleInfoForBars, getBarColor);
 
             // Add title to middle layer
