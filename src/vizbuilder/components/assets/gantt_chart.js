@@ -25,6 +25,573 @@ define(['d3'], function(d3) {
     // Event dispatcher for component communication
     const dispatch = d3.dispatch("scrubberMove", "scrubberStart", "scrubberEnd");
 
+    // ========================================================================
+    // Helper Functions
+    // ========================================================================
+
+    /**
+     * Loads a custom font from a URL (CSS file or direct font file)
+     * @param {string} fontUrl - URL to font file (.woff2) or CSS file (Google Fonts)
+     * @param {string} fontFamily - Font family name (e.g., "Virgil", "Kalam")
+     * @returns {void}
+     */
+    function loadCustomFont(fontUrl, fontFamily) {
+        if (!fontUrl || !fontFamily) return;
+
+        // Check if font is already loaded
+        const fontId = `font-${fontFamily.replace(/\s+/g, '-')}`;
+        if (document.getElementById(fontId)) return;
+
+        // Check if fontUrl is a CSS file (like Google Fonts) or a direct font file
+        if (fontUrl.includes('.css') || fontUrl.includes('fonts.googleapis.com')) {
+            // Load CSS file (e.g., Google Fonts)
+            const link = document.createElement('link');
+            link.id = fontId;
+            link.rel = 'stylesheet';
+            link.href = fontUrl;
+            document.head.appendChild(link);
+        } else {
+            // Direct font file (e.g., .woff2)
+            const style = document.createElement('style');
+            style.id = fontId;
+            style.textContent = `
+                @font-face {
+                    font-family: "${fontFamily}";
+                    src: url("${fontUrl}") format("woff2");
+                    font-weight: normal;
+                    font-style: normal;
+                }
+            `;
+            document.head.appendChild(style);
+        }
+    }
+
+    /**
+     * Creates appropriate y-axis scale(s) based on data structure
+     * @param {Array} data - Chart data
+     * @param {Array} categories - Unique categories
+     * @param {number} innerHeight - Available height for chart
+     * @returns {Object} { yScale, categoryScale, subcategoryScales, hasSubcategories }
+     */
+    function createYScale(data, categories, innerHeight) {
+        // Check if data has subcategories
+        const hasSubcategories = data.some(d => d.subcategory !== undefined);
+
+        if (hasSubcategories) {
+            // Create nested scales for categories and subcategories
+
+            // Group data by category to find subcategories for each
+            const categoryGroups = d3.group(data, d => d.category);
+            const subcategoriesPerCategory = new Map();
+            categoryGroups.forEach((items, category) => {
+                const subcats = Array.from(new Set(items.map(d => d.subcategory)));
+                subcategoriesPerCategory.set(category, subcats);
+            });
+
+            // Create category scale (outer scale)
+            const categoryScale = d3.scaleBand()
+                .domain(categories)
+                .range([innerHeight, 0]);
+
+            // Create subcategory scales (inner scales) for each category
+            const subcategoryScales = new Map();
+            categories.forEach(category => {
+                const subcats = subcategoriesPerCategory.get(category);
+                const scale = d3.scaleBand()
+                    .domain(subcats)
+                    .range([categoryScale.bandwidth(), 0])
+                    .padding(0.1);
+                subcategoryScales.set(category, scale);
+            });
+
+            // Create combined yScale function for positioning bars
+            const yScale = function(d) {
+                const categoryY = categoryScale(d.category);
+                const subcategoryY = subcategoryScales.get(d.category)(d.subcategory);
+                return categoryY + subcategoryY;
+            };
+            yScale.bandwidth = function(d) {
+                return subcategoryScales.get(d.category).bandwidth();
+            };
+
+            return { yScale, categoryScale, subcategoryScales, hasSubcategories: true };
+        } else {
+            // Original single-level scale
+            const yScale = d3.scaleBand()
+                .domain(categories)
+                .range([innerHeight, 0])
+                .padding(0.2);
+
+            return { yScale, categoryScale: null, subcategoryScales: null, hasSubcategories: false };
+        }
+    }
+
+    /**
+     * Creates and configures a tooltip element
+     * @param {d3.Selection} container - D3 selection of container element
+     * @returns {d3.Selection} Configured tooltip selection
+     */
+    function createTooltip(container) {
+        return container.append("div")
+            .attr("class", "gantt-tooltip")
+            .style("position", "absolute")
+            .style("background", "rgba(0, 0, 0, 0.9)")
+            .style("color", "white")
+            .style("padding", "12px")
+            .style("border-radius", "6px")
+            .style("font-size", "12px")
+            .style("pointer-events", "none")
+            .style("opacity", 0)
+            .style("z-index", 10000)
+            .style("box-shadow", "0 4px 8px rgba(0,0,0,0.3)")
+            .style("max-width", "250px")
+            .style("word-wrap", "break-word");
+    }
+
+    /**
+     * Positions tooltip within container bounds
+     * @param {Object} mousePos - {x, y} mouse position
+     * @param {DOMRect} tooltipRect - Tooltip bounding rect
+     * @param {number} containerWidth - Container width
+     * @param {number} containerHeight - Container height
+     * @returns {Object} {x, y} position for tooltip
+     */
+    function positionTooltip(mousePos, tooltipRect, containerWidth, containerHeight) {
+        let x = mousePos.x + 15; // Offset from cursor
+        let y = mousePos.y - 10;
+
+        // Keep tooltip within container bounds
+        if (x + tooltipRect.width > containerWidth) {
+            x = mousePos.x - tooltipRect.width - 15;
+        }
+        if (y < 0) {
+            y = mousePos.y + 25;
+        }
+        if (y + tooltipRect.height > containerHeight) {
+            y = containerHeight - tooltipRect.height - 10;
+        }
+
+        // Ensure minimum distance from edges
+        x = Math.max(5, Math.min(x, containerWidth - tooltipRect.width - 5));
+        y = Math.max(5, Math.min(y, containerHeight - tooltipRect.height - 5));
+
+        return { x, y };
+    }
+
+    /**
+     * Generates HTML content for tooltip
+     * @param {Object} d - Data point
+     * @param {Function} getBarColor - Function to get bar color
+     * @returns {string} HTML string for tooltip content
+     */
+    function generateTooltipContent(d, getBarColor) {
+        const barColor = getBarColor(d);
+        return `
+            <div style="border-left: 4px solid ${barColor}; padding-left: 12px;">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+                    <div style="width: 12px; height: 12px; background-color: ${barColor}; border-radius: 2px;"></div>
+                    <div>
+                        <div style="font-weight: bold; font-size: 14px;">${d.category}</div>
+                        ${d.text ? `<div style="font-size: 12px; color: #ccc; font-style: italic;">${d.text}</div>` : ''}
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; font-size: 12px;">
+                    <span style="color: #ccc;">🕐 Start:</span>
+                    <strong>${Math.round(d.start).toLocaleString()}</strong>
+
+                    <span style="color: #ccc;">🕐 Duration:</span>
+                    <strong>${Math.round(d.duration).toLocaleString()}</strong>
+
+                    <span style="color: #ccc;">🕐 End:</span>
+                    <strong>${Math.round(d.start + d.duration).toLocaleString()}</strong>
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Adds grid lines to the chart
+     * @param {d3.Selection} group - SVG group to add grid to
+     * @param {d3.Scale} xScale - X-axis scale
+     * @param {number} innerHeight - Chart inner height
+     * @param {number} numTicks - Number of tick marks
+     * @returns {void}
+     */
+    function addGridLines(group, xScale, innerHeight, numTicks) {
+        const xGrid = d3.axisBottom(xScale)
+            .tickSize(-innerHeight)
+            .tickFormat("")
+            .ticks(numTicks)
+            .tickSizeOuter(0);
+
+        group.append("g")
+            .attr("class", "grid")
+            .attr("transform", `translate(0,${innerHeight})`)
+            .call(xGrid)
+            .call(g => g.selectAll(".domain").remove())
+            .selectAll("line")
+            .attr("class", "grid-line")
+            .attr("stroke", "white")
+            .attr("stroke-width", 3);
+    }
+
+    /**
+     * Adds alternating background rectangles for category groups
+     * @param {d3.Selection} group - SVG group to add backgrounds to
+     * @param {Array} categories - Category labels
+     * @param {d3.Scale} categoryScale - Category scale
+     * @param {number} innerWidth - Chart inner width
+     * @param {Array} opacities - [even, odd] opacity values
+     * @returns {void}
+     */
+    function addCategoryBackgrounds(group, categories, categoryScale, innerWidth, opacities) {
+        const categoryBackgrounds = group.append("g")
+            .attr("class", "category-backgrounds");
+
+        categoryBackgrounds.selectAll(".category-bg")
+            .data(categories)
+            .enter()
+            .append("rect")
+            .attr("class", "category-bg")
+            .attr("x", 0)
+            .attr("y", d => categoryScale(d))
+            .attr("width", innerWidth)
+            .attr("height", d => categoryScale.bandwidth())
+            .attr("fill", (d, i) => i % 2 === 0 ?
+                `rgba(255, 255, 255, ${opacities[0]})` :
+                `rgba(0, 0, 0, ${opacities[1]})`)
+            .attr("stroke", "none");
+    }
+
+    /**
+     * Renders the Y-axis with support for simple or nested categories
+     * @param {d3.Selection} group - SVG group for axis
+     * @param {Object} scaleInfo - Object containing yScale, categoryScale, subcategoryScales, hasSubcategories
+     * @param {Array} categories - Category labels
+     * @param {Object} options - { axisFontSize, axisFontFamily, centerCategoryLabels }
+     * @returns {void}
+     */
+    function renderYAxis(group, scaleInfo, categories, options) {
+        const { yScale, categoryScale, hasSubcategories } = scaleInfo;
+        const { axisFontSize, axisFontFamily, centerCategoryLabels } = options;
+
+        if (hasSubcategories) {
+            // Custom y-axis with centered category labels
+            const yAxis = group.append("g")
+                .attr("class", "axis");
+
+            yAxis.selectAll(".tick")
+                .data(categories)
+                .enter()
+                .append("g")
+                .attr("class", "tick")
+                .attr("transform", d => {
+                    // Center label in the middle of the category group
+                    const categoryY = categoryScale(d);
+                    const categoryHeight = categoryScale.bandwidth();
+                    return `translate(0,${categoryY + categoryHeight / 2})`;
+                })
+                .append("text")
+                .attr("x", centerCategoryLabels ? -75 : -9)
+                .attr("dy", "0.32em")
+                .style("text-anchor", centerCategoryLabels ? "middle" : "end")
+                .style("font-size", `${axisFontSize}px`)
+                .style("font-family", axisFontFamily || null)
+                .text(d => d);
+        } else {
+            // Original y-axis for non-subcategory data
+            const yAxisLeft = d3.axisLeft(yScale)
+                .tickSize(0);
+
+            group.append("g")
+                .attr("class", "axis")
+                .call(yAxisLeft)
+                .call(g => g.selectAll(".domain").remove())
+                .call(g => {
+                    const textElements = g.selectAll("text")
+                        .style("font-size", `${axisFontSize}px`)
+                        .attr("x", centerCategoryLabels ? -20 : null)
+                        .style("text-anchor", centerCategoryLabels ? "middle" : null);
+                    if (axisFontFamily) {
+                        textElements.style("font-family", axisFontFamily);
+                    }
+                });
+        }
+    }
+
+    /**
+     * Creates a function to determine bar colors
+     * @param {Array|null} colorScheme - Array of colors or null to use data colors
+     * @param {Array} categories - Category labels
+     * @returns {Function} Function that takes data point and returns color
+     */
+    function createColorMapper(colorScheme, categories) {
+        if (colorScheme !== null) {
+            // Map categories to colors from the scheme
+            const categoryToColorIndex = new Map();
+            categories.forEach((cat, i) => {
+                categoryToColorIndex.set(cat, i % colorScheme.length);
+            });
+            return d => colorScheme[categoryToColorIndex.get(d.category)];
+        } else {
+            // Use colors from data
+            return d => d.color;
+        }
+    }
+
+    /**
+     * Checks if timeline entry intersects with scrubber position
+     * @param {Object} d - Data point with start and duration
+     * @param {number} scrubberPosition - Scrubber position in pixels
+     * @param {d3.Scale} xScale - X-axis scale
+     * @returns {boolean} True if intersected
+     */
+    function checkScrubberIntersection(d, scrubberPosition, xScale) {
+        const entryStart = xScale(d.start);
+        const entryEnd = xScale(d.start + d.duration);
+        return scrubberPosition >= entryStart && scrubberPosition <= entryEnd;
+    }
+
+    /**
+     * Updates bar opacity and emits scrubber events based on position
+     * @param {d3.Selection} bars - Selection of bar elements
+     * @param {number} scrubberPosition - Scrubber position in pixels
+     * @param {d3.Scale} xScale - X-axis scale
+     * @param {Array} data - Chart data
+     * @param {d3.Dispatch} dispatch - Event dispatcher
+     * @returns {Array} Array of intersected data points
+     */
+    function updateScrubberState(bars, scrubberPosition, xScale, data, dispatch) {
+        const intersectedData = [];
+
+        // Update bar opacity based on intersection
+        bars.transition("scrubber")
+            .duration(50)
+            .attr("opacity", function(d) {
+                const isIntersected = checkScrubberIntersection(d, scrubberPosition, xScale);
+                if (isIntersected) {
+                    intersectedData.push(d);
+                    return 1.0;
+                }
+                return 0.3;
+            });
+
+        // Emit event with intersected data
+        const scrubberValue = xScale.invert(scrubberPosition);
+        dispatch.call("scrubberMove", null, {
+            position: scrubberValue,
+            intersectedData: intersectedData
+        });
+
+        return intersectedData;
+    }
+
+    /**
+     * Adds axis labels to the chart
+     * @param {d3.Selection} group - SVG group for labels
+     * @param {Object} labels - { xAxisLabel, yAxisLabel }
+     * @param {Object} dimensions - { containerWidth, containerHeight }
+     * @param {Object} styling - { axisFontSize, axisFontFamily }
+     * @returns {void}
+     */
+    function addAxisLabels(group, labels, dimensions, styling) {
+        const { xAxisLabel, yAxisLabel } = labels;
+        const { containerWidth, containerHeight } = dimensions;
+        const { axisFontSize, axisFontFamily } = styling;
+
+        if (yAxisLabel !== null) {
+            const yLabel = group.append("text")
+                .attr("class", "axis-label")
+                .attr("transform", "rotate(-90)")
+                .attr("y", 20)
+                .attr("x", -containerHeight / 2)
+                .style("text-anchor", "middle")
+                .style("font-size", `${axisFontSize}px`)
+                .text(yAxisLabel);
+            if (axisFontFamily) {
+                yLabel.style("font-family", axisFontFamily);
+            }
+        }
+
+        if (xAxisLabel !== null) {
+            const xLabel = group.append("text")
+                .attr("class", "axis-label")
+                .attr("x", containerWidth / 2)
+                .attr("y", containerHeight - 10)
+                .style("text-anchor", "middle")
+                .style("font-size", `${axisFontSize}px`)
+                .text(xAxisLabel);
+            if (axisFontFamily) {
+                xLabel.style("font-family", axisFontFamily);
+            }
+        }
+    }
+
+    /**
+     * Creates interactive scrubber with drag behavior
+     * @param {d3.Selection} scrubberGroup - SVG group for scrubber elements
+     * @param {d3.Selection} bars - Selection of bar elements
+     * @param {d3.Scale} xScale - X-axis scale
+     * @param {number} innerWidth - Chart inner width
+     * @param {number} innerHeight - Chart inner height
+     * @param {Array} data - Chart data
+     * @param {d3.Dispatch} dispatch - Event dispatcher
+     * @param {number} initialPosition - Initial scrubber position (0-1)
+     * @returns {Object} { scrubberLine, scrubberHandle, scrubberLabel, scrubberLabelBg, currentX }
+     */
+    function createScrubber(scrubberGroup, bars, xScale, innerWidth, innerHeight, data, dispatch, initialPosition) {
+        let currentScrubberX = innerWidth * initialPosition;
+
+        // Scrubber line
+        const scrubberLine = scrubberGroup.append("line")
+            .attr("class", "scrubber-line")
+            .attr("x1", currentScrubberX)
+            .attr("x2", currentScrubberX)
+            .attr("y1", 0)
+            .attr("y2", innerHeight)
+            .attr("stroke", "#ff6b35")
+            .attr("stroke-width", 3)
+            .attr("opacity", 0.8)
+            .style("cursor", "ew-resize");
+
+        // Scrubber handle (circle at top)
+        const scrubberHandle = scrubberGroup.append("circle")
+            .attr("class", "scrubber-handle")
+            .attr("cx", currentScrubberX)
+            .attr("cy", 0)
+            .attr("r", 8)
+            .attr("fill", "#ff6b35")
+            .attr("stroke", "white")
+            .attr("stroke-width", 2)
+            .style("cursor", "ew-resize");
+
+        // Scrubber value label background
+        const scrubberLabelBg = scrubberGroup.append("rect")
+            .attr("class", "scrubber-label-bg")
+            .attr("fill", "rgba(255, 255, 255, 0.9)")
+            .attr("stroke", "#ff6b35")
+            .attr("stroke-width", 1)
+            .attr("rx", 3)
+            .attr("ry", 3);
+
+        // Scrubber value label
+        const scrubberLabel = scrubberGroup.append("text")
+            .attr("class", "scrubber-label")
+            .attr("x", currentScrubberX)
+            .attr("y", -15)
+            .attr("text-anchor", "middle")
+            .attr("fill", "#ff6b35")
+            .attr("font-size", "12px")
+            .attr("font-weight", "bold")
+            .text(Math.round(xScale.invert(currentScrubberX)));
+
+        // Position background after text is rendered
+        const labelBBox = scrubberLabel.node().getBBox();
+        scrubberLabelBg
+            .attr("x", labelBBox.x - 4)
+            .attr("y", labelBBox.y - 2)
+            .attr("width", labelBBox.width + 8)
+            .attr("height", labelBBox.height + 4);
+
+        // Drag behavior
+        const drag = d3.drag()
+            .on("drag", function(event) {
+                // Constrain scrubber to chart bounds
+                currentScrubberX = Math.max(0, Math.min(innerWidth, event.x));
+
+                // Update scrubber position
+                scrubberLine
+                    .attr("x1", currentScrubberX)
+                    .attr("x2", currentScrubberX);
+
+                scrubberHandle.attr("cx", currentScrubberX);
+
+                scrubberLabel
+                    .attr("x", currentScrubberX)
+                    .text(Math.round(xScale.invert(currentScrubberX)));
+
+                // Update background x position only
+                const labelBBox = scrubberLabel.node().getBBox();
+                scrubberLabelBg.attr("x", labelBBox.x - 4);
+
+                // Update intersections and emit events
+                updateScrubberState(bars, currentScrubberX, xScale, data, dispatch);
+            });
+
+        // Apply drag behavior to both line and handle
+        scrubberLine.call(drag);
+        scrubberHandle.call(drag);
+
+        // Initialize scrubber state
+        updateScrubberState(bars, currentScrubberX, xScale, data, dispatch);
+
+        return { scrubberLine, scrubberHandle, scrubberLabel, scrubberLabelBg, currentX: currentScrubberX };
+    }
+
+    /**
+     * Adds hover interactions and tooltips to bars
+     * @param {d3.Selection} bars - Selection of bar elements
+     * @param {d3.Selection} tooltip - Tooltip element
+     * @param {Function} getBarColor - Function to get bar color
+     * @param {boolean} scrubberEnabled - Whether scrubber is enabled
+     * @param {number} currentScrubberX - Current scrubber position
+     * @param {d3.Scale} xScale - X-axis scale
+     * @param {Object} containerDimensions - { width, height }
+     * @param {Function} getRelativeMousePosition - Function to get mouse position
+     * @returns {void}
+     */
+    function addBarInteractivity(bars, tooltip, getBarColor, scrubberEnabled, currentScrubberX, xScale, containerDimensions, getRelativeMousePosition) {
+        bars.on("mouseover", function(event, d) {
+            d3.select(this)
+                .interrupt("scrubber")  // Cancel scrubber transitions
+                .interrupt("hover")     // Cancel any existing hover transitions
+                .attr("opacity", 0.8)
+                .attr("stroke", "#333")
+                .attr("stroke-width", 2);
+
+            // Create enhanced tooltip content
+            const tooltipContent = generateTooltipContent(d, getBarColor);
+            tooltip.html(tooltipContent);
+
+            // Position tooltip
+            const mousePos = getRelativeMousePosition(event);
+            const tooltipPos = positionTooltip(mousePos, tooltip.node().getBoundingClientRect(), containerDimensions.width, containerDimensions.height);
+
+            tooltip
+                .style("left", tooltipPos.x + "px")
+                .style("top", tooltipPos.y + "px")
+                .transition()
+                .duration(100)
+                .style("opacity", 1);
+        })
+        .on("mousemove", function(event, d) {
+            // Update tooltip position as mouse moves
+            const mousePos = getRelativeMousePosition(event);
+            const tooltipPos = positionTooltip(mousePos, tooltip.node().getBoundingClientRect(), containerDimensions.width, containerDimensions.height);
+
+            tooltip
+                .style("left", tooltipPos.x + "px")
+                .style("top", tooltipPos.y + "px");
+        })
+        .on("mouseout", function(event, d) {
+            // Reset to scrubber-determined opacity
+            const isIntersected = scrubberEnabled ? checkScrubberIntersection(d, currentScrubberX, xScale) : true;
+            const targetOpacity = isIntersected ? 1.0 : 0.3;
+
+            d3.select(this)
+                .transition()
+                .duration(100)
+                .attr("opacity", scrubberEnabled ? targetOpacity : 1.0)
+                .attr("stroke", "none");
+
+            // Hide tooltip
+            tooltip.transition()
+                .duration(150)
+                .style("opacity", 0);
+        });
+    }
+
     function chart(selection) {
         console.log("** Rendering Again **");
         selection.each(function(data) {
@@ -34,35 +601,8 @@ define(['d3'], function(d3) {
 
             // Load custom font if specified
             if (fontUrl) {
-                // Extract font family name from titleFontFamily or axisFontFamily
                 const fontFamily = (titleFontFamily || axisFontFamily || "").split(',')[0].trim().replace(/['"]/g, '');
-
-                // Check if font is already loaded
-                const fontId = `font-${fontFamily.replace(/\s+/g, '-')}`;
-                if (!document.getElementById(fontId)) {
-                    // Check if fontUrl is a CSS file (like Google Fonts) or a direct font file
-                    if (fontUrl.includes('.css') || fontUrl.includes('fonts.googleapis.com')) {
-                        // Load CSS file (e.g., Google Fonts)
-                        const link = document.createElement('link');
-                        link.id = fontId;
-                        link.rel = 'stylesheet';
-                        link.href = fontUrl;
-                        document.head.appendChild(link);
-                    } else {
-                        // Direct font file (e.g., .woff2)
-                        const style = document.createElement('style');
-                        style.id = fontId;
-                        style.textContent = `
-                            @font-face {
-                                font-family: "${fontFamily}";
-                                src: url("${fontUrl}") format("woff2");
-                                font-weight: normal;
-                                font-style: normal;
-                            }
-                        `;
-                        document.head.appendChild(style);
-                    }
-                }
+                loadCustomFont(fontUrl, fontFamily);
             }
             
             const containerRect = container.node().getBoundingClientRect();
@@ -79,80 +619,15 @@ define(['d3'], function(d3) {
                 .domain([-xMax * 0.01, xMax * 1.01])
                 .range([0, inner_width]);
 
-            // Check if data has subcategories
-            const hasSubcategories = data.some(d => d.subcategory !== undefined);
-
             // Get unique categories
             const categories = Array.from(new Set(data.map(d => d.category)));
 
-            let yScale, categoryScale, subcategoryScales;
-
-            if (hasSubcategories) {
-                // Create nested scales for categories and subcategories
-
-                // Group data by category to find subcategories for each
-                const categoryGroups = d3.group(data, d => d.category);
-                const subcategoriesPerCategory = new Map();
-                categoryGroups.forEach((items, category) => {
-                    const subcats = Array.from(new Set(items.map(d => d.subcategory)));
-                    subcategoriesPerCategory.set(category, subcats);
-                });
-
-                // Calculate total rows needed
-                const totalRows = Array.from(subcategoriesPerCategory.values())
-                    .reduce((sum, subcats) => sum + subcats.length, 0);
-
-                // Create category scale (outer scale)
-                categoryScale = d3.scaleBand()
-                    .domain(categories)
-                    .range([inner_height, 0]);
-                  //  .paddingOuter(0.1)
-                  //  .paddingInner(0.2);
-
-                // Create subcategory scales (inner scales) for each category
-                subcategoryScales = new Map();
-                categories.forEach(category => {
-                    const subcats = subcategoriesPerCategory.get(category);
-                    const scale = d3.scaleBand()
-                        .domain(subcats)
-                        .range([categoryScale.bandwidth(), 0])
-                        .padding(0.1);
-                    subcategoryScales.set(category, scale);
-                });
-
-                // Create combined yScale function for positioning bars
-                yScale = function(d) {
-                    const categoryY = categoryScale(d.category);
-                    const subcategoryY = subcategoryScales.get(d.category)(d.subcategory);
-                    return categoryY + subcategoryY;
-                };
-                yScale.bandwidth = function(d) {
-                    return subcategoryScales.get(d.category).bandwidth();
-                };
-            } else {
-                // Original single-level scale
-                yScale = d3.scaleBand()
-                    .domain(categories)
-                    .range([inner_height, 0])
-                    .padding(0.2);
-            }
+            // Create Y scale(s)
+            const { yScale, categoryScale, subcategoryScales, hasSubcategories } = createYScale(data, categories, inner_height);
 
             // Create tooltip within the container with relative positioning
-            const tooltip = container.append("div")
-                .attr("class", "gantt-tooltip")
-                .style("position", "absolute")
-                .style("background", "rgba(0, 0, 0, 0.9)")
-                .style("color", "white")
-                .style("padding", "12px")
-                .style("border-radius", "6px")
-                .style("font-size", "12px")
-                .style("pointer-events", "none")
-                .style("opacity", 0)
-                .style("z-index", 10000)
-                .style("box-shadow", "0 4px 8px rgba(0,0,0,0.3)")
-                .style("max-width", "250px")
-                .style("word-wrap", "break-word");
-            
+            const tooltip = createTooltip(container);
+
             // Ensure the container has relative positioning for proper tooltip positioning
             container.style("position", "relative");
             
@@ -195,41 +670,12 @@ define(['d3'], function(d3) {
 
             // Add alternating background rectangles for category groups (if subcategories exist)
             if (hasSubcategories) {
-                const categoryBackgrounds = barsGroup.append("g")
-                    .attr("class", "category-backgrounds");
-
-                categoryBackgrounds.selectAll(".category-bg")
-                    .data(categories)
-                    .enter()
-                    .append("rect")
-                    .attr("class", "category-bg")
-                    .attr("x", 0)
-                    .attr("y", d => categoryScale(d))
-                    .attr("width", inner_width)
-                    .attr("height", d => categoryScale.bandwidth())
-                    .attr("fill", (d, i) => i % 2 === 0 ?
-                        `rgba(255, 255, 255, ${categoryBackgroundOpacity[0]})` :
-                        `rgba(0, 0, 0, ${categoryBackgroundOpacity[1]})`)
-                    .attr("stroke", "none");
+                addCategoryBackgrounds(barsGroup, categories, categoryScale, inner_width, categoryBackgroundOpacity);
             }
 
             // Add grid lines
             if (showGridLines) {
-                const xGrid = d3.axisBottom(xScale)
-                    .tickSize(-inner_height)
-                    .tickFormat("")
-                    .ticks(num_ticks)
-                    .tickSizeOuter(0);
-
-                barsGroup.append("g")
-                    .attr("class", "grid")
-                    .attr("transform", `translate(0,${inner_height})`)
-                    .call(xGrid)
-                    .call(g => g.selectAll(".domain").remove())
-                    .selectAll("line")
-                    .attr("class", "grid-line")
-                    .attr("stroke", "white")
-                    .attr("stroke-width", 3);
+                addGridLines(barsGroup, xScale, inner_height, num_ticks);
             }
 
             // Create axes
@@ -251,63 +697,11 @@ define(['d3'], function(d3) {
                 });
 
             // Add Y axis
-            if (hasSubcategories) {
-                // Custom y-axis with centered category labels
-                const yAxis = barsGroup.append("g")
-                    .attr("class", "axis");
-
-                yAxis.selectAll(".tick")
-                    .data(categories)
-                    .enter()
-                    .append("g")
-                    .attr("class", "tick")
-                    .attr("transform", d => {
-                        // Center label in the middle of the category group
-                        const categoryY = categoryScale(d);
-                        const categoryHeight = categoryScale.bandwidth();
-                        return `translate(0,${categoryY + categoryHeight / 2})`;
-                    })
-                    .append("text")
-                    .attr("x", centerCategoryLabels ? -75 : -9)
-                    .attr("dy", "0.32em")
-                    .style("text-anchor", centerCategoryLabels ? "middle" : "end")
-                    .style("font-size", `${axisFontSize}px`)
-                    .style("font-family", axisFontFamily || null)
-                    .text(d => d);
-            } else {
-                // Original y-axis for non-subcategory data
-                const yAxisLeft = d3.axisLeft(yScale)
-                    .tickSize(0);
-
-                barsGroup.append("g")
-                    .attr("class", "axis")
-                    .call(yAxisLeft)
-                    .call(g => g.selectAll(".domain").remove())
-                    .call(g => {
-                        const textElements = g.selectAll("text")
-                            .style("font-size", `${axisFontSize}px`)
-                            .attr("x", centerCategoryLabels ? -20 : null)
-                            .style("text-anchor", centerCategoryLabels ? "middle" : null);
-                        if (axisFontFamily) {
-                            textElements.style("font-family", axisFontFamily);
-                        }
-                    });
-            }
+            const scaleInfo = { yScale, categoryScale, subcategoryScales, hasSubcategories };
+            renderYAxis(barsGroup, scaleInfo, categories, { axisFontSize, axisFontFamily, centerCategoryLabels });
 
             // Add bars
-            // Apply color scheme if specified
-            let getBarColor;
-            if (colorScheme !== null) {
-                // Map categories to colors from the scheme
-                const categoryToColorIndex = new Map();
-                categories.forEach((cat, i) => {
-                    categoryToColorIndex.set(cat, i % colorScheme.length);
-                });
-                getBarColor = d => colorScheme[categoryToColorIndex.get(d.category)];
-            } else {
-                // Use colors from data
-                getBarColor = d => d.color;
-            }
+            const getBarColor = createColorMapper(colorScheme, categories);
 
             const bars = barsGroup.selectAll(".bar")
                 .data(data)
@@ -336,131 +730,14 @@ define(['d3'], function(d3) {
                 }
             }
 
-            // Store current scrubber position
+            // Store current scrubber position for bar interactivity
             let currentScrubberX = inner_width * 0.3;
-
-            // Helper function to check if a timeline entry intersects with scrubber position
-            function checkIntersection(d, scrubberPosition) {
-                const entryStart = xScale(d.start);
-                const entryEnd = xScale(d.start + d.duration);
-                return scrubberPosition >= entryStart && scrubberPosition <= entryEnd;
-            }
-            
-            // Helper function to update visual feedback and emit events
-            function updateScrubberState(scrubberPosition) {
-                const intersectedData = [];
-
-                // Update bar opacity based on intersection
-                bars.transition("scrubber")
-                    .duration(50)
-                    .attr("opacity", function(d) {
-                        const isIntersected = checkIntersection(d, scrubberPosition);
-                        if (isIntersected) {
-                            intersectedData.push(d);
-                            return 1.0;
-                        }
-                        return 0.3;
-                    });
-
-                // Store current scrubber position
-                currentScrubberX = scrubberPosition;
-
-                // Emit event with intersected data
-                const scrubberValue = xScale.invert(scrubberPosition);
-                dispatch.call("scrubberMove", null, {
-                    position: scrubberValue,
-                    intersectedData: intersectedData
-                });
-            }
 
             // Add horizontal scrubber
             // Scrubber requires interactiveMode to be enabled
             if (scrubberEnabled && interactiveMode) {
-                
-                // Use the front layer scrubber group
-                
-                // Scrubber line
-                const scrubberLine = scrubberGroup.append("line")
-                    .attr("class", "scrubber-line")
-                    .attr("x1", currentScrubberX)
-                    .attr("x2", currentScrubberX)
-                    .attr("y1", 0)
-                    .attr("y2", inner_height)
-                    .attr("stroke", "#ff6b35")
-                    .attr("stroke-width", 3)
-                    .attr("opacity", 0.8)
-                    .style("cursor", "ew-resize");
-                
-                // Scrubber handle (circle at top)
-                const scrubberHandle = scrubberGroup.append("circle")
-                    .attr("class", "scrubber-handle")
-                    .attr("cx", currentScrubberX)
-                    .attr("cy", 0)
-                    .attr("r", 8)
-                    .attr("fill", "#ff6b35")
-                    .attr("stroke", "white")
-                    .attr("stroke-width", 2)
-                    .style("cursor", "ew-resize");
-                
-                // Scrubber value label background
-                const scrubberLabelBg = scrubberGroup.append("rect")
-                    .attr("class", "scrubber-label-bg")
-                    .attr("fill", "rgba(255, 255, 255, 0.9)")
-                    .attr("stroke", "#ff6b35")
-                    .attr("stroke-width", 1)
-                    .attr("rx", 3)
-                    .attr("ry", 3);
-
-                // Scrubber value label
-                const scrubberLabel = scrubberGroup.append("text")
-                    .attr("class", "scrubber-label")
-                    .attr("x", currentScrubberX)
-                    .attr("y", -15)
-                    .attr("text-anchor", "middle")
-                    .attr("fill", "#ff6b35")
-                    .attr("font-size", "12px")
-                    .attr("font-weight", "bold")
-                    .text(Math.round(xScale.invert(currentScrubberX)));
-
-                // Position background after text is rendered
-                const labelBBox = scrubberLabel.node().getBBox();
-                scrubberLabelBg
-                    .attr("x", labelBBox.x - 4)
-                    .attr("y", labelBBox.y - 2)
-                    .attr("width", labelBBox.width + 8)
-                    .attr("height", labelBBox.height + 4);
-                
-                // Drag behavior
-                const drag = d3.drag()
-                    .on("drag", function(event) {
-                        // Constrain scrubber to chart bounds
-                        currentScrubberX = Math.max(0, Math.min(inner_width, event.x));
-
-                        // Update scrubber position
-                        scrubberLine
-                            .attr("x1", currentScrubberX)
-                            .attr("x2", currentScrubberX);
-
-                        scrubberHandle.attr("cx", currentScrubberX);
-
-                        scrubberLabel
-                            .attr("x", currentScrubberX)
-                            .text(Math.round(xScale.invert(currentScrubberX)));
-
-                        // Update background x position only
-                        const labelBBox = scrubberLabel.node().getBBox();
-                        scrubberLabelBg.attr("x", labelBBox.x - 4);
-
-                        // Update intersections and emit events
-                        updateScrubberState(currentScrubberX);
-                    });
-                
-                // Apply drag behavior to both line and handle
-                scrubberLine.call(drag);
-                scrubberHandle.call(drag);
-
-                // Initialize scrubber state
-                updateScrubberState(currentScrubberX);
+                const scrubberResult = createScrubber(scrubberGroup, bars, xScale, inner_width, inner_height, data, dispatch, 0.3);
+                currentScrubberX = scrubberResult.currentX;
             } else {
                 // Even without scrubber, emit initial data for linked components
                 dispatch.call("scrubberMove", null, {
@@ -483,142 +760,29 @@ define(['d3'], function(d3) {
             
             
             // Add axis labels to middle layer
-            if (yAxisLabel !== null) {
-                const yLabel = titleGroup.append("text")
-                    .attr("class", "axis-label")
-                    .attr("transform", "rotate(-90)")
-                    .attr("y", 20)
-                    .attr("x", -containerHeight / 2)
-                    .style("text-anchor", "middle")
-                    .style("font-size", `${axisFontSize}px`)
-                    .text(yAxisLabel);
-                if (axisFontFamily) {
-                    yLabel.style("font-family", axisFontFamily);
-                }
-            }
-
-            if (xAxisLabel !== null) {
-                const xLabel = titleGroup.append("text")
-                    .attr("class", "axis-label")
-                    .attr("x", containerWidth / 2)
-                    .attr("y", containerHeight - 10)
-                    .style("text-anchor", "middle")
-                    .style("font-size", `${axisFontSize}px`)
-                    .text(xAxisLabel);
-                if (axisFontFamily) {
-                    xLabel.style("font-family", axisFontFamily);
-                }
-            }
+            addAxisLabels(titleGroup, { xAxisLabel, yAxisLabel }, { containerWidth, containerHeight }, { axisFontSize, axisFontFamily });
             
             // Helper function to get mouse position relative to container
             function getRelativeMousePosition(event) {
                 const containerRect = container.node().getBoundingClientRect();
-                
                 return {
                     x: event.clientX - containerRect.left,
                     y: event.clientY - containerRect.top
                 };
             }
-            
-            // Helper function to position tooltip within bounds
-            function positionTooltip(mousePos, tooltipNode) {
-                const tooltipRect = tooltipNode.getBoundingClientRect();
-                
-                let x = mousePos.x + 15; // Offset from cursor
-                let y = mousePos.y - 10;
-                
-                // Keep tooltip within container bounds
-                if (x + tooltipRect.width > containerWidth) {
-                    x = mousePos.x - tooltipRect.width - 15;
-                }
-                if (y < 0) {
-                    y = mousePos.y + 25;
-                }
-                if (y + tooltipRect.height > containerHeight) {
-                    y = containerHeight - tooltipRect.height - 10;
-                }
-                
-                // Ensure minimum distance from edges
-                x = Math.max(5, Math.min(x, containerWidth - tooltipRect.width - 5));
-                y = Math.max(5, Math.min(y, containerHeight - tooltipRect.height - 5));
-                
-                return { x, y };
-            }
 
             // Add interactivity with tooltips
             if (interactiveMode) {
-                barsGroup.selectAll(".bar")
-                    .on("mouseover", function(event, d) {
-                    d3.select(this)
-                        .interrupt("scrubber")  // Cancel scrubber transitions
-                        .interrupt("hover")     // Cancel any existing hover transitions
-                        .attr("opacity", 0.8)
-                        .attr("stroke", "#333")
-                        .attr("stroke-width", 2);
-                    
-                    // Create enhanced tooltip content
-                    const barColor = getBarColor(d);
-                    const tooltipContent = `
-                        <div style="border-left: 4px solid ${barColor}; padding-left: 12px;">
-                            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
-                                <div style="width: 12px; height: 12px; background-color: ${barColor}; border-radius: 2px;"></div>
-                                <div>
-                                    <div style="font-weight: bold; font-size: 14px;">${d.category}</div>
-                                    ${d.text ? `<div style="font-size: 12px; color: #ccc; font-style: italic;">${d.text}</div>` : ''}
-                                </div>
-                            </div>
-                            
-                            <div style="display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; font-size: 12px;">
-                                <span style="color: #ccc;">🕐 Start:</span>
-                                <strong>${Math.round(d.start).toLocaleString()}</strong>
-                                
-                                <span style="color: #ccc;">🕐 Duration:</span>
-                                <strong>${Math.round(d.duration).toLocaleString()}</strong>
-                                
-                                <span style="color: #ccc;">🕐 End:</span>
-                                <strong>${Math.round(d.start + d.duration).toLocaleString()}</strong>
-                            </div>
-                        </div>
-                    `;
-                    
-                    tooltip.html(tooltipContent);
-                    
-                    // Position tooltip
-                    const mousePos = getRelativeMousePosition(event);
-                    const tooltipPos = positionTooltip(mousePos, tooltip.node());
-                    
-                    tooltip
-                        .style("left", tooltipPos.x + "px")
-                        .style("top", tooltipPos.y + "px")
-                        .transition()
-                        .duration(100)
-                        .style("opacity", 1);
-                })
-                .on("mousemove", function(event, d) {
-                    // Update tooltip position as mouse moves
-                    const mousePos = getRelativeMousePosition(event);
-                    const tooltipPos = positionTooltip(mousePos, tooltip.node());
-                    
-                    tooltip
-                        .style("left", tooltipPos.x + "px")
-                        .style("top", tooltipPos.y + "px");
-                })
-                .on("mouseout", function(event, d) {
-                    // Reset to scrubber-determined opacity
-                    const isIntersected = scrubberEnabled ? checkIntersection(d, currentScrubberX) : true;
-                    const targetOpacity = isIntersected ? 1.0 : 0.3;
-
-                    d3.select(this)
-                        .transition()
-                        .duration(100)
-                        .attr("opacity", scrubberEnabled ? targetOpacity : 1.0)
-                        .attr("stroke", "none");
-
-                    // Hide tooltip
-                    tooltip.transition()
-                        .duration(150)
-                        .style("opacity", 0);
-                    });
+                addBarInteractivity(
+                    barsGroup.selectAll(".bar"),
+                    tooltip,
+                    getBarColor,
+                    scrubberEnabled,
+                    currentScrubberX,
+                    xScale,
+                    { width: containerWidth, height: containerHeight },
+                    getRelativeMousePosition
+                );
             }
         });
     }
