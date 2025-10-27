@@ -408,19 +408,19 @@ define(['d3'], function(d3) {
     /**
      * Adds axis labels to the chart
      * @param {d3.Selection} group - SVG group for labels
-     * @param {number} containerWidth - Container width
-     * @param {number} containerHeight - Container height
+     * @param {number} svgWidth - SVG width for horizontal positioning
+     * @param {number} svgHeight - SVG height for vertical positioning
      * @param {Object} config - Configuration object with { xAxisLabel, yAxisLabel, axisFontSize, fontFamily }
      * @returns {void}
      */
-    function addAxisLabels(group, containerWidth, containerHeight, { xAxisLabel, yAxisLabel, axisFontSize, fontFamily }) {
+    function addAxisLabels(group, svgWidth, svgHeight, { xAxisLabel, yAxisLabel, axisFontSize, fontFamily }) {
 
         if (yAxisLabel !== null) {
             const yLabel = group.append("text")
                 .attr("class", "axis-label")
                 .attr("transform", "rotate(-90)")
                 .attr("y", 20)
-                .attr("x", -containerHeight / 2)
+                .attr("x", -svgHeight / 2)
                 .style("text-anchor", "middle")
                 .style("font-size", `${axisFontSize}px`)
                 .text(yAxisLabel);
@@ -432,8 +432,8 @@ define(['d3'], function(d3) {
         if (xAxisLabel !== null) {
             const xLabel = group.append("text")
                 .attr("class", "axis-label")
-                .attr("x", containerWidth / 2)
-                .attr("y", containerHeight - 10)
+                .attr("x", svgWidth / 2)
+                .attr("y", svgHeight - 10)
                 .style("text-anchor", "middle")
                 .style("font-size", `${axisFontSize}px`)
                 .text(xAxisLabel);
@@ -612,16 +612,16 @@ define(['d3'], function(d3) {
     /**
      * Renders chart title
      * @param {d3.Selection} group - SVG group for title
-     * @param {number} containerWidth - Container width for centering
+     * @param {number} svgWidth - SVG width for centering
      * @param {Object} config - Configuration object with { title, titleFontSize, fontFamily }
      * @returns {void}
      */
-    function renderTitle(group, containerWidth, { title, titleFontSize, fontFamily }) {
+    function renderTitle(group, svgWidth, { title, titleFontSize, fontFamily }) {
 
         if (title !== null) {
             const titleElement = group.append("text")
                 .attr("class", "title")
-                .attr("x", containerWidth / 2)
+                .attr("x", svgWidth / 2)
                 .attr("y", 25)
                 .attr("text-anchor", "middle")
                 .style("font-size", `${titleFontSize}px`)
@@ -641,11 +641,20 @@ define(['d3'], function(d3) {
      * @param {boolean} scrubberEnabled - Whether scrubber is enabled
      * @param {number} currentScrubberX - Current scrubber position
      * @param {d3.Scale} xScale - X-axis scale
-     * @param {Object} containerDimensions - { width, height }
-     * @param {Function} getRelativeMousePosition - Function to get mouse position
+     * @param {d3.Selection} container - Container element for computing dimensions and mouse position
      * @returns {void}
      */
-    function addBarInteractivity(bars, tooltip, getBarColor, scrubberEnabled, currentScrubberX, xScale, containerDimensions, getRelativeMousePosition) {
+    function addBarInteractivity(bars, tooltip, getBarColor, scrubberEnabled, currentScrubberX, xScale, container) {
+        // Get container's actual rendered dimensions (after SVG has been appended)
+        const containerRect = container.node().getBoundingClientRect();
+
+        // Helper function to get mouse position relative to container
+        function getRelativeMousePosition(event) {
+            return {
+                x: event.clientX - containerRect.left,
+                y: event.clientY - containerRect.top
+            };
+        }
         bars.on("mouseover", function(event, d) {
             d3.select(this)
                 .interrupt("scrubber")  // Cancel scrubber transitions
@@ -660,7 +669,7 @@ define(['d3'], function(d3) {
 
             // Position tooltip
             const mousePos = getRelativeMousePosition(event);
-            const tooltipPos = positionTooltip(mousePos, tooltip.node().getBoundingClientRect(), containerDimensions.width, containerDimensions.height);
+            const tooltipPos = positionTooltip(mousePos, tooltip.node().getBoundingClientRect(), containerRect.width, containerRect.height);
 
             tooltip
                 .style("left", tooltipPos.x + "px")
@@ -672,7 +681,7 @@ define(['d3'], function(d3) {
         .on("mousemove", function(event, d) {
             // Update tooltip position as mouse moves
             const mousePos = getRelativeMousePosition(event);
-            const tooltipPos = positionTooltip(mousePos, tooltip.node().getBoundingClientRect(), containerDimensions.width, containerDimensions.height);
+            const tooltipPos = positionTooltip(mousePos, tooltip.node().getBoundingClientRect(), containerRect.width, containerRect.height);
 
             tooltip
                 .style("left", tooltipPos.x + "px")
@@ -741,11 +750,12 @@ define(['d3'], function(d3) {
             const container = d3.select(this);
             container.selectAll('*').remove();
 
+            // Determine SVG dimensions from config (with fallback to container for width)
             const containerRect = container.node().getBoundingClientRect();
-            const containerWidth = config.width || containerRect.width;
-            const containerHeight = config.height;
-            const inner_width = Math.max(100, containerWidth - margin.left - margin.right);
-            const inner_height = Math.max(100, containerHeight - margin.top - margin.bottom);
+            const svgWidth = config.width || containerRect.width;
+            const svgHeight = config.height;
+            const inner_width = Math.max(100, svgWidth - margin.left - margin.right);
+            const inner_height = Math.max(100, svgHeight - margin.top - margin.bottom);
 
             // Scales
             const xScale = createXScale(data, inner_width);
@@ -762,8 +772,8 @@ define(['d3'], function(d3) {
             // Create SVG
             const svg = container
                 .append("svg")
-                .attr("width", containerWidth)
-                .attr("height", containerHeight);
+                .attr("width", svgWidth)
+                .attr("height", svgHeight);
    
 
             // Create layered groups for proper z-ordering
@@ -804,7 +814,7 @@ define(['d3'], function(d3) {
             const bars = renderBars(barsGroup, data, xScale, scaleInfoForBars, getBarColor);
 
             // Add title to middle layer
-            renderTitle(titleGroup, containerWidth, config);
+            renderTitle(titleGroup, svgWidth, config);
 
             // Store current scrubber position for bar interactivity
             let currentScrubberX = inner_width * 0.3;
@@ -824,16 +834,7 @@ define(['d3'], function(d3) {
             
 
             // Add axis labels to middle layer
-            addAxisLabels(titleGroup, containerWidth, containerHeight, config);
-            
-            // Helper function to get mouse position relative to container
-            function getRelativeMousePosition(event) {
-                const containerRect = container.node().getBoundingClientRect();
-                return {
-                    x: event.clientX - containerRect.left,
-                    y: event.clientY - containerRect.top
-                };
-            }
+            addAxisLabels(titleGroup, svgWidth, svgHeight, config);
 
             // Add interactivity with tooltips
             if (config.interactiveMode) {
@@ -844,8 +845,7 @@ define(['d3'], function(d3) {
                     config.scrubberEnabled,
                     currentScrubberX,
                     xScale,
-                    { width: containerWidth, height: containerHeight },
-                    getRelativeMousePosition
+                    container
                 );
             }
         });
