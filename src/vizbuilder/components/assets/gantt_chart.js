@@ -1,13 +1,6 @@
 define(['d3'], function(d3) {
-    function ganttChart() {
-    // Default configuration
-    const margin = {top: 60, right: 40, bottom: 60, left: 60};
-
-    // Event dispatcher for component communication
-    const dispatch = d3.dispatch("scrubberMove", "scrubberStart", "scrubberEnd");
-
     // ========================================================================
-    // Helper Functions
+    // Helper Functions (Module-level utilities)
     // ========================================================================
 
     /**
@@ -573,8 +566,19 @@ define(['d3'], function(d3) {
         });
     }
 
-    // Configuration object with default values
-    const config = {
+    // ========================================================================
+    // Main Component Factory
+    // ========================================================================
+
+    function ganttChart() {
+        // Default configuration
+        const margin = {top: 60, right: 40, bottom: 60, left: 60};
+
+        // Event dispatcher for component communication
+        const dispatch = d3.dispatch("scrubberMove", "scrubberStart", "scrubberEnd");
+
+        // Configuration object with default values
+        const config = {
         width: null,
         height: 300,
         padding: 0.2,
