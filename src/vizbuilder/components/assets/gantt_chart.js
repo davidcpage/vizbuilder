@@ -250,12 +250,12 @@ define(['d3'], function(d3) {
      * @param {d3.Selection} group - SVG group for axis
      * @param {Object} scaleInfo - Object containing yScale, categoryScale, subcategoryScales, hasSubcategories
      * @param {Array} categories - Category labels
-     * @param {Object} options - { axisFontSize, axisFontFamily, centerCategoryLabels }
+     * @param {Object} options - { axisFontSize, fontFamily, centerCategoryLabels }
      * @returns {void}
      */
     function renderYAxis(group, scaleInfo, categories, options) {
         const { yScale, categoryScale, hasSubcategories } = scaleInfo;
-        const { axisFontSize, axisFontFamily, centerCategoryLabels } = options;
+        const { axisFontSize, fontFamily, centerCategoryLabels } = options;
 
         if (hasSubcategories) {
             // Custom y-axis with centered category labels
@@ -278,7 +278,7 @@ define(['d3'], function(d3) {
                 .attr("dy", "0.32em")
                 .style("text-anchor", centerCategoryLabels ? "middle" : "end")
                 .style("font-size", `${axisFontSize}px`)
-                .style("font-family", axisFontFamily || null)
+                .style("font-family", fontFamily || null)
                 .text(d => d);
         } else {
             // Original y-axis for non-subcategory data
@@ -294,8 +294,8 @@ define(['d3'], function(d3) {
                         .style("font-size", `${axisFontSize}px`)
                         .attr("x", centerCategoryLabels ? -20 : null)
                         .style("text-anchor", centerCategoryLabels ? "middle" : null);
-                    if (axisFontFamily) {
-                        textElements.style("font-family", axisFontFamily);
+                    if (fontFamily) {
+                        textElements.style("font-family", fontFamily);
                     }
                 });
         }
@@ -373,13 +373,13 @@ define(['d3'], function(d3) {
      * @param {d3.Selection} group - SVG group for labels
      * @param {Object} labels - { xAxisLabel, yAxisLabel }
      * @param {Object} dimensions - { containerWidth, containerHeight }
-     * @param {Object} styling - { axisFontSize, axisFontFamily }
+     * @param {Object} styling - { axisFontSize, fontFamily }
      * @returns {void}
      */
     function addAxisLabels(group, labels, dimensions, styling) {
         const { xAxisLabel, yAxisLabel } = labels;
         const { containerWidth, containerHeight } = dimensions;
-        const { axisFontSize, axisFontFamily } = styling;
+        const { axisFontSize, fontFamily } = styling;
 
         if (yAxisLabel !== null) {
             const yLabel = group.append("text")
@@ -390,8 +390,8 @@ define(['d3'], function(d3) {
                 .style("text-anchor", "middle")
                 .style("font-size", `${axisFontSize}px`)
                 .text(yAxisLabel);
-            if (axisFontFamily) {
-                yLabel.style("font-family", axisFontFamily);
+            if (fontFamily) {
+                yLabel.style("font-family", fontFamily);
             }
         }
 
@@ -403,8 +403,8 @@ define(['d3'], function(d3) {
                 .style("text-anchor", "middle")
                 .style("font-size", `${axisFontSize}px`)
                 .text(xAxisLabel);
-            if (axisFontFamily) {
-                xLabel.style("font-family", axisFontFamily);
+            if (fontFamily) {
+                xLabel.style("font-family", fontFamily);
             }
         }
     }
@@ -589,9 +589,8 @@ define(['d3'], function(d3) {
         interactiveMode: true,
         colorScheme: null, // Can be an array of colors or null to use data colors
         centerCategoryLabels: false, // If true, category labels are centered horizontally
-        titleFontFamily: null, // Font family for title (e.g., "Virgil, sans-serif")
-        axisFontFamily: null, // Font family for axis labels and ticks (e.g., "Virgil, sans-serif")
-        fontUrl: null // URL to load custom font (e.g., "https://excalidraw.com/Virgil.woff2")
+        fontFamily: null, // Font family for all text (e.g., "Virgil, sans-serif", "Kalam, cursive")
+        fontUrl: null // URL to load custom font - CSS file (Google Fonts) or direct .woff2 file
     };
 
     function chart(selection) {
@@ -602,8 +601,8 @@ define(['d3'], function(d3) {
             container.selectAll('*').remove();
 
             // Load custom font if specified
-            if (config.fontUrl) {
-                const fontFamily = (config.titleFontFamily || config.axisFontFamily || "").split(',')[0].trim().replace(/['"]/g, '');
+            if (config.fontUrl && config.fontFamily) {
+                const fontFamily = config.fontFamily.split(',')[0].trim().replace(/['"]/g, '');
                 loadCustomFont(config.fontUrl, fontFamily);
             }
 
@@ -693,14 +692,14 @@ define(['d3'], function(d3) {
                 .call(g => g.selectAll(".domain").remove())
                 .call(g => {
                     g.selectAll("text").style("font-size", `${config.axisFontSize}px`);
-                    if (config.axisFontFamily) {
-                        g.selectAll("text").style("font-family", config.axisFontFamily);
+                    if (config.fontFamily) {
+                        g.selectAll("text").style("font-family", config.fontFamily);
                     }
                 });
 
             // Add Y axis
             const scaleInfo = { yScale, categoryScale, subcategoryScales, hasSubcategories };
-            renderYAxis(barsGroup, scaleInfo, categories, { axisFontSize: config.axisFontSize, axisFontFamily: config.axisFontFamily, centerCategoryLabels: config.centerCategoryLabels });
+            renderYAxis(barsGroup, scaleInfo, categories, { axisFontSize: config.axisFontSize, fontFamily: config.fontFamily, centerCategoryLabels: config.centerCategoryLabels });
 
             // Add bars
             const getBarColor = createColorMapper(config.colorScheme, categories);
@@ -727,8 +726,8 @@ define(['d3'], function(d3) {
                     .style("font-size", `${config.titleFontSize}px`)
                     .text(config.title);
 
-                if (config.titleFontFamily) {
-                    titleElement.style("font-family", config.titleFontFamily);
+                if (config.fontFamily) {
+                    titleElement.style("font-family", config.fontFamily);
                 }
             }
 
@@ -760,9 +759,9 @@ define(['d3'], function(d3) {
              //   .attr("dominant-baseline", "middle")
             //    .text(d => d.text);
             
-            
+
             // Add axis labels to middle layer
-            addAxisLabels(titleGroup, { xAxisLabel: config.xAxisLabel, yAxisLabel: config.yAxisLabel }, { containerWidth, containerHeight }, { axisFontSize: config.axisFontSize, axisFontFamily: config.axisFontFamily });
+            addAxisLabels(titleGroup, { xAxisLabel: config.xAxisLabel, yAxisLabel: config.yAxisLabel }, { containerWidth, containerHeight }, { axisFontSize: config.axisFontSize, fontFamily: config.fontFamily });
             
             // Helper function to get mouse position relative to container
             function getRelativeMousePosition(event) {
