@@ -727,16 +727,17 @@ define(['d3'], function(d3) {
 
     function chart(selection) {
         console.log("** Rendering Again **");
+
+        // Load custom font if specified (once per chart call, not per element)
+        if (config.fontUrl && config.fontFamily) {
+            const fontFamily = config.fontFamily.split(',')[0].trim().replace(/['"]/g, '');
+            loadCustomFont(config.fontUrl, fontFamily);
+        }
+
         selection.each(function(data) {
             // Clear existing content
             const container = d3.select(this);
             container.selectAll('*').remove();
-
-            // Load custom font if specified
-            if (config.fontUrl && config.fontFamily) {
-                const fontFamily = config.fontFamily.split(',')[0].trim().replace(/['"]/g, '');
-                loadCustomFont(config.fontUrl, fontFamily);
-            }
 
             const containerRect = container.node().getBoundingClientRect();
             const containerWidth = config.width || containerRect.width;
