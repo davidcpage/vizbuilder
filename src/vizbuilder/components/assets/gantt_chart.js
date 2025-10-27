@@ -2,25 +2,6 @@ define(['d3'], function(d3) {
     function ganttChart() {
     // Default configuration
     const margin = {top: 60, right: 40, bottom: 60, left: 60};
-    let width = null;
-    let height = 300;
-    let padding = 0.2;
-    let scrubberEnabled = true;
-
-    // Presentation/styling options
-    let axisFontSize = 12;
-    let titleFontSize = 15;
-    let titleText = "timeline";
-    let xAxisLabel = "x-axis";
-    let yAxisLabel = "y-axis";
-    let showGridLines = true;
-    let categoryBackgroundOpacity = [0.3, 0.05]; // [even, odd] indices
-    let interactiveMode = true;
-    let colorScheme = null; // Can be an array of colors or null to use data colors
-    let centerCategoryLabels = false; // If true, category labels are centered horizontally
-    let titleFontFamily = null; // Font family for title (e.g., "Virgil, sans-serif")
-    let axisFontFamily = null; // Font family for axis labels and ticks (e.g., "Virgil, sans-serif")
-    let fontUrl = null; // URL to load custom font (e.g., "https://excalidraw.com/Virgil.woff2")
 
     // Event dispatcher for component communication
     const dispatch = d3.dispatch("scrubberMove", "scrubberStart", "scrubberEnd");
@@ -592,6 +573,27 @@ define(['d3'], function(d3) {
         });
     }
 
+    // Configuration object with default values
+    const config = {
+        width: null,
+        height: 300,
+        padding: 0.2,
+        scrubberEnabled: true,
+        axisFontSize: 12,
+        titleFontSize: 15,
+        title: "timeline",
+        xAxisLabel: "x-axis",
+        yAxisLabel: "y-axis",
+        showGridLines: true,
+        categoryBackgroundOpacity: [0.3, 0.05], // [even, odd] indices
+        interactiveMode: true,
+        colorScheme: null, // Can be an array of colors or null to use data colors
+        centerCategoryLabels: false, // If true, category labels are centered horizontally
+        titleFontFamily: null, // Font family for title (e.g., "Virgil, sans-serif")
+        axisFontFamily: null, // Font family for axis labels and ticks (e.g., "Virgil, sans-serif")
+        fontUrl: null // URL to load custom font (e.g., "https://excalidraw.com/Virgil.woff2")
+    };
+
     function chart(selection) {
         console.log("** Rendering Again **");
         selection.each(function(data) {
@@ -600,14 +602,14 @@ define(['d3'], function(d3) {
             container.selectAll('*').remove();
 
             // Load custom font if specified
-            if (fontUrl) {
-                const fontFamily = (titleFontFamily || axisFontFamily || "").split(',')[0].trim().replace(/['"]/g, '');
-                loadCustomFont(fontUrl, fontFamily);
+            if (config.fontUrl) {
+                const fontFamily = (config.titleFontFamily || config.axisFontFamily || "").split(',')[0].trim().replace(/['"]/g, '');
+                loadCustomFont(config.fontUrl, fontFamily);
             }
-            
+
             const containerRect = container.node().getBoundingClientRect();
-            const containerWidth = width || containerRect.width;
-            const containerHeight = height;
+            const containerWidth = config.width || containerRect.width;
+            const containerHeight = config.height;
             const inner_width = Math.max(100, containerWidth - margin.left - margin.right);
             const inner_height = Math.max(100, containerHeight - margin.top - margin.bottom);
             
@@ -644,7 +646,7 @@ define(['d3'], function(d3) {
             const scrubberGroup = svg.append("g").attr("class", "scrubber-layer");
 
             // Create zoom behavior that affects both bars and scrubber layers
-            if (interactiveMode) {
+            if (config.interactiveMode) {
                 const zoom = d3.zoom()
                     .scaleExtent([0.1, 10])  // Set zoom scale limits
                     .on("zoom", function(event) {
@@ -670,11 +672,11 @@ define(['d3'], function(d3) {
 
             // Add alternating background rectangles for category groups (if subcategories exist)
             if (hasSubcategories) {
-                addCategoryBackgrounds(barsGroup, categories, categoryScale, inner_width, categoryBackgroundOpacity);
+                addCategoryBackgrounds(barsGroup, categories, categoryScale, inner_width, config.categoryBackgroundOpacity);
             }
 
             // Add grid lines
-            if (showGridLines) {
+            if (config.showGridLines) {
                 addGridLines(barsGroup, xScale, inner_height, num_ticks);
             }
 
@@ -690,18 +692,18 @@ define(['d3'], function(d3) {
                 .call(xAxisBottom)
                 .call(g => g.selectAll(".domain").remove())
                 .call(g => {
-                    g.selectAll("text").style("font-size", `${axisFontSize}px`);
-                    if (axisFontFamily) {
-                        g.selectAll("text").style("font-family", axisFontFamily);
+                    g.selectAll("text").style("font-size", `${config.axisFontSize}px`);
+                    if (config.axisFontFamily) {
+                        g.selectAll("text").style("font-family", config.axisFontFamily);
                     }
                 });
 
             // Add Y axis
             const scaleInfo = { yScale, categoryScale, subcategoryScales, hasSubcategories };
-            renderYAxis(barsGroup, scaleInfo, categories, { axisFontSize, axisFontFamily, centerCategoryLabels });
+            renderYAxis(barsGroup, scaleInfo, categories, { axisFontSize: config.axisFontSize, axisFontFamily: config.axisFontFamily, centerCategoryLabels: config.centerCategoryLabels });
 
             // Add bars
-            const getBarColor = createColorMapper(colorScheme, categories);
+            const getBarColor = createColorMapper(config.colorScheme, categories);
 
             const bars = barsGroup.selectAll(".bar")
                 .data(data)
@@ -716,17 +718,17 @@ define(['d3'], function(d3) {
                 .attr("stroke", "none");
             
             // Add title to middle layer
-            if (titleText !== null) {
+            if (config.title !== null) {
                 const titleElement = titleGroup.append("text")
                     .attr("class", "title")
                     .attr("x", containerWidth / 2)
                     .attr("y", 25)
                     .attr("text-anchor", "middle")
-                    .style("font-size", `${titleFontSize}px`)
-                    .text(titleText);
+                    .style("font-size", `${config.titleFontSize}px`)
+                    .text(config.title);
 
-                if (titleFontFamily) {
-                    titleElement.style("font-family", titleFontFamily);
+                if (config.titleFontFamily) {
+                    titleElement.style("font-family", config.titleFontFamily);
                 }
             }
 
@@ -735,7 +737,7 @@ define(['d3'], function(d3) {
 
             // Add horizontal scrubber
             // Scrubber requires interactiveMode to be enabled
-            if (scrubberEnabled && interactiveMode) {
+            if (config.scrubberEnabled && config.interactiveMode) {
                 const scrubberResult = createScrubber(scrubberGroup, bars, xScale, inner_width, inner_height, data, dispatch, 0.3);
                 currentScrubberX = scrubberResult.currentX;
             } else {
@@ -760,7 +762,7 @@ define(['d3'], function(d3) {
             
             
             // Add axis labels to middle layer
-            addAxisLabels(titleGroup, { xAxisLabel, yAxisLabel }, { containerWidth, containerHeight }, { axisFontSize, axisFontFamily });
+            addAxisLabels(titleGroup, { xAxisLabel: config.xAxisLabel, yAxisLabel: config.yAxisLabel }, { containerWidth, containerHeight }, { axisFontSize: config.axisFontSize, axisFontFamily: config.axisFontFamily });
             
             // Helper function to get mouse position relative to container
             function getRelativeMousePosition(event) {
@@ -772,12 +774,12 @@ define(['d3'], function(d3) {
             }
 
             // Add interactivity with tooltips
-            if (interactiveMode) {
+            if (config.interactiveMode) {
                 addBarInteractivity(
                     barsGroup.selectAll(".bar"),
                     tooltip,
                     getBarColor,
-                    scrubberEnabled,
+                    config.scrubberEnabled,
                     currentScrubberX,
                     xScale,
                     { width: containerWidth, height: containerHeight },
@@ -786,80 +788,24 @@ define(['d3'], function(d3) {
             }
         });
     }
-    
-    // Getter/setter methods for configuration
-    chart.width = function(_) {
-        return arguments.length ? (width = _, chart) : width;
-    };
-    
-    chart.scrubberEnabled = function(_) {
-        return arguments.length ? (scrubberEnabled = _, chart) : scrubberEnabled;
-    };
-    
+
+    /**
+     * Creates a getter/setter method for a configuration property
+     * @param {string} property - Property name
+     * @returns {void}
+     */
+    function createAccessor(property) {
+        chart[property] = function(_) {
+            return arguments.length ? (config[property] = _, chart) : config[property];
+        };
+    }
+
+    // Create getter/setter methods for all config properties
+    Object.keys(config).forEach(createAccessor);
+
     // Expose event dispatcher for external components
     chart.on = function(type, callback) {
         return dispatch.on(type, callback);
-    };
-    
-    chart.padding = function(_) {
-        return arguments.length ? (padding = _, chart) : padding;
-    };
-    
-    chart.height = function(_) {
-        return arguments.length ? (height = _, chart) : height;
-    };
-
-    // Presentation/styling configuration methods
-    chart.axisFontSize = function(_) {
-        return arguments.length ? (axisFontSize = _, chart) : axisFontSize;
-    };
-
-    chart.titleFontSize = function(_) {
-        return arguments.length ? (titleFontSize = _, chart) : titleFontSize;
-    };
-
-    chart.title = function(_) {
-        return arguments.length ? (titleText = _, chart) : titleText;
-    };
-
-    chart.xAxisLabel = function(_) {
-        return arguments.length ? (xAxisLabel = _, chart) : xAxisLabel;
-    };
-
-    chart.yAxisLabel = function(_) {
-        return arguments.length ? (yAxisLabel = _, chart) : yAxisLabel;
-    };
-
-    chart.showGridLines = function(_) {
-        return arguments.length ? (showGridLines = _, chart) : showGridLines;
-    };
-
-    chart.categoryBackgroundOpacity = function(even, odd) {
-        return arguments.length ? (categoryBackgroundOpacity = [even, odd], chart) : categoryBackgroundOpacity;
-    };
-
-    chart.interactiveMode = function(_) {
-        return arguments.length ? (interactiveMode = _, chart) : interactiveMode;
-    };
-
-    chart.colorScheme = function(_) {
-        return arguments.length ? (colorScheme = _, chart) : colorScheme;
-    };
-
-    chart.centerCategoryLabels = function(_) {
-        return arguments.length ? (centerCategoryLabels = _, chart) : centerCategoryLabels;
-    };
-
-    chart.titleFontFamily = function(_) {
-        return arguments.length ? (titleFontFamily = _, chart) : titleFontFamily;
-    };
-
-    chart.axisFontFamily = function(_) {
-        return arguments.length ? (axisFontFamily = _, chart) : axisFontFamily;
-    };
-
-    chart.fontUrl = function(_) {
-        return arguments.length ? (fontUrl = _, chart) : fontUrl;
     };
 
     return chart;
