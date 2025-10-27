@@ -6,14 +6,17 @@ define(['d3'], function(d3) {
     /**
      * Loads a custom font from a URL (CSS file or direct font file)
      * @param {string} fontUrl - URL to font file (.woff2) or CSS file (Google Fonts)
-     * @param {string} fontFamily - Font family name (e.g., "Virgil", "Kalam")
+     * @param {string} fontFamily - Font family name (e.g., "Virgil", "Kalam", or "Virgil, sans-serif")
      * @returns {void}
      */
     function loadCustomFont(fontUrl, fontFamily) {
         if (!fontUrl || !fontFamily) return;
 
+        // Normalize font family: extract first font, trim, remove quotes
+        const normalizedFamily = fontFamily.split(',')[0].trim().replace(/['"]/g, '');
+
         // Check if font is already loaded
-        const fontId = `font-${fontFamily.replace(/\s+/g, '-')}`;
+        const fontId = `font-${normalizedFamily.replace(/\s+/g, '-')}`;
         if (document.getElementById(fontId)) return;
 
         // Check if fontUrl is a CSS file (like Google Fonts) or a direct font file
@@ -30,7 +33,7 @@ define(['d3'], function(d3) {
             style.id = fontId;
             style.textContent = `
                 @font-face {
-                    font-family: "${fontFamily}";
+                    font-family: "${normalizedFamily}";
                     src: url("${fontUrl}") format("woff2");
                     font-weight: normal;
                     font-style: normal;
@@ -730,8 +733,7 @@ define(['d3'], function(d3) {
 
         // Load custom font if specified (once per chart call, not per element)
         if (config.fontUrl && config.fontFamily) {
-            const fontFamily = config.fontFamily.split(',')[0].trim().replace(/['"]/g, '');
-            loadCustomFont(config.fontUrl, fontFamily);
+            loadCustomFont(config.fontUrl, config.fontFamily);
         }
 
         selection.each(function(data) {
