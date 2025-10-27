@@ -504,6 +504,124 @@ define(['d3'], function(d3) {
     }
 
     /**
+     * Creates X-axis scale based on data range
+     * @param {Array} data - Chart data
+     * @param {number} innerWidth - Available width for chart
+     * @returns {d3.Scale} Linear scale for X-axis
+     */
+    function createXScale(data, innerWidth) {
+        const xMax = d3.max(data, d => d.start + d.duration);
+        return d3.scaleLinear()
+            .domain([-xMax * 0.01, xMax * 1.01])
+            .range([0, innerWidth]);
+    }
+
+    /**
+     * Renders the X-axis with support for custom fonts
+     * @param {d3.Selection} group - SVG group for axis
+     * @param {d3.Scale} xScale - X-axis scale
+     * @param {number} innerHeight - Chart inner height
+     * @param {Object} options - { numTicks, axisFontSize, fontFamily }
+     * @returns {void}
+     */
+    function renderXAxis(group, xScale, innerHeight, options) {
+        const { numTicks, axisFontSize, fontFamily } = options;
+        const xAxisBottom = d3.axisBottom(xScale)
+            .tickSize(0)
+            .ticks(numTicks);
+
+        group.append("g")
+            .attr("class", "axis")
+            .attr("transform", `translate(0,${innerHeight})`)
+            .call(xAxisBottom)
+            .call(g => g.selectAll(".domain").remove())
+            .call(g => {
+                g.selectAll("text").style("font-size", `${axisFontSize}px`);
+                if (fontFamily) {
+                    g.selectAll("text").style("font-family", fontFamily);
+                }
+            });
+    }
+
+    /**
+     * Sets up zoom behavior for interactive chart navigation
+     * @param {d3.Selection} svg - SVG element
+     * @param {Object} targetGroups - { barsGroup, scrubberGroup } to be transformed
+     * @param {Object} margin - Margin configuration
+     * @param {boolean} interactiveMode - Whether to enable zoom
+     * @returns {void}
+     */
+    function setupZoomBehavior(svg, targetGroups, margin, interactiveMode) {
+        const { barsGroup, scrubberGroup } = targetGroups;
+
+        if (interactiveMode) {
+            const zoom = d3.zoom()
+                .scaleExtent([0.1, 10])
+                .on("zoom", function(event) {
+                    barsGroup.attr("transform", event.transform);
+                    scrubberGroup.attr("transform", event.transform);
+                });
+
+            svg.call(zoom)
+                .call(zoom.transform, d3.zoomIdentity.translate(margin.left, margin.top));
+        } else {
+            barsGroup.attr("transform", `translate(${margin.left},${margin.top})`);
+            scrubberGroup.attr("transform", `translate(${margin.left},${margin.top})`);
+        }
+    }
+
+    /**
+     * Renders timeline bars
+     * @param {d3.Selection} group - SVG group for bars
+     * @param {Array} data - Chart data
+     * @param {d3.Scale} xScale - X-axis scale
+     * @param {Object} scaleInfo - { yScale, hasSubcategories }
+     * @param {Function} getBarColor - Function to get bar color
+     * @returns {d3.Selection} Selection of bar elements
+     */
+    function renderBars(group, data, xScale, scaleInfo, getBarColor) {
+        const { yScale, hasSubcategories } = scaleInfo;
+
+        return group.selectAll(".bar")
+            .data(data)
+            .enter()
+            .append("rect")
+            .attr("class", "bar")
+            .attr("x", d => xScale(d.start))
+            .attr("y", d => hasSubcategories ? yScale(d) : yScale(d.category))
+            .attr("width", d => xScale(d.start + d.duration*0.99) - xScale(d.start))
+            .attr("height", d => hasSubcategories ? yScale.bandwidth(d) : yScale.bandwidth())
+            .attr("fill", getBarColor)
+            .attr("stroke", "none");
+    }
+
+    /**
+     * Renders chart title
+     * @param {d3.Selection} group - SVG group for title
+     * @param {string|null} title - Title text
+     * @param {number} containerWidth - Container width for centering
+     * @param {Object} options - { titleFontSize, fontFamily }
+     * @returns {void}
+     */
+    function renderTitle(group, title, containerWidth, options) {
+        const { titleFontSize, fontFamily } = options;
+
+        if (title !== null) {
+            const titleElement = group.append("text")
+                .attr("class", "title")
+                .attr("x", containerWidth / 2)
+                .attr("y", 25)
+                .attr("text-anchor", "middle")
+                .style("font-size", `${titleFontSize}px`)
+                .text(title);
+
+            if (fontFamily) {
+                titleElement.style("font-family", fontFamily);
+            }
+        }
+    }
+
+    /**
      * Adds hover interactions and tooltips to bars
      * @param {d3.Selection} bars - Selection of bar elements
      * @param {d3.Selection} tooltip - Tooltip element
@@ -617,12 +735,9 @@ define(['d3'], function(d3) {
             const inner_height = Math.max(100, containerHeight - margin.top - margin.bottom);
             
             const num_ticks = 8;
-            
+
             // Scales
-            const xMax = d3.max(data, d => d.start + d.duration);
-            const xScale = d3.scaleLinear()
-                .domain([-xMax * 0.01, xMax * 1.01])
-                .range([0, inner_width]);
+            const xScale = createXScale(data, inner_width);
 
             // Get unique categories
             const categories = Array.from(new Set(data.map(d => d.category)));
@@ -648,23 +763,8 @@ define(['d3'], function(d3) {
             const titleGroup = svg.append("g").attr("class", "title-layer");
             const scrubberGroup = svg.append("g").attr("class", "scrubber-layer");
 
-            // Create zoom behavior that affects both bars and scrubber layers
-            if (config.interactiveMode) {
-                const zoom = d3.zoom()
-                    .scaleExtent([0.1, 10])  // Set zoom scale limits
-                    .on("zoom", function(event) {
-                        barsGroup.attr("transform", event.transform);
-                        scrubberGroup.attr("transform", event.transform);
-                    });
-
-                // Apply zoom behavior to the SVG and set initial zoom
-                svg.call(zoom)
-                .call(zoom.transform, d3.zoomIdentity.translate(margin.left, margin.top)); // Set initial transform
-            } else {
-                // No zoom, just apply initial transform
-                barsGroup.attr("transform", `translate(${margin.left},${margin.top})`);
-                scrubberGroup.attr("transform", `translate(${margin.left},${margin.top})`);
-            }
+            // Setup zoom behavior
+            setupZoomBehavior(svg, { barsGroup, scrubberGroup }, margin, config.interactiveMode);
 
             // Add plot area background
             barsGroup.append("rect")
@@ -683,23 +783,8 @@ define(['d3'], function(d3) {
                 addGridLines(barsGroup, xScale, inner_height, num_ticks);
             }
 
-            // Create axes
-            const xAxisBottom = d3.axisBottom(xScale)
-                .tickSize(0)
-                .ticks(num_ticks);
-
             // Add X axis
-            barsGroup.append("g")
-                .attr("class", "axis")
-                .attr("transform", `translate(0,${inner_height})`)
-                .call(xAxisBottom)
-                .call(g => g.selectAll(".domain").remove())
-                .call(g => {
-                    g.selectAll("text").style("font-size", `${config.axisFontSize}px`);
-                    if (config.fontFamily) {
-                        g.selectAll("text").style("font-family", config.fontFamily);
-                    }
-                });
+            renderXAxis(barsGroup, xScale, inner_height, { numTicks: num_ticks, axisFontSize: config.axisFontSize, fontFamily: config.fontFamily });
 
             // Add Y axis
             const scaleInfo = { yScale, categoryScale, subcategoryScales, hasSubcategories };
@@ -707,33 +792,11 @@ define(['d3'], function(d3) {
 
             // Add bars
             const getBarColor = createColorMapper(config.colorScheme, categories);
+            const scaleInfoForBars = { yScale, hasSubcategories };
+            const bars = renderBars(barsGroup, data, xScale, scaleInfoForBars, getBarColor);
 
-            const bars = barsGroup.selectAll(".bar")
-                .data(data)
-                .enter()
-                .append("rect")
-                .attr("class", "bar")
-                .attr("x", d => xScale(d.start))
-                .attr("y", d => hasSubcategories ? yScale(d) : yScale(d.category))
-                .attr("width", d => xScale(d.start + d.duration*0.99) - xScale(d.start))
-                .attr("height", d => hasSubcategories ? yScale.bandwidth(d) : yScale.bandwidth())
-                .attr("fill", getBarColor)
-                .attr("stroke", "none");
-            
             // Add title to middle layer
-            if (config.title !== null) {
-                const titleElement = titleGroup.append("text")
-                    .attr("class", "title")
-                    .attr("x", containerWidth / 2)
-                    .attr("y", 25)
-                    .attr("text-anchor", "middle")
-                    .style("font-size", `${config.titleFontSize}px`)
-                    .text(config.title);
-
-                if (config.fontFamily) {
-                    titleElement.style("font-family", config.fontFamily);
-                }
-            }
+            renderTitle(titleGroup, config.title, containerWidth, { titleFontSize: config.titleFontSize, fontFamily: config.fontFamily });
 
             // Store current scrubber position for bar interactivity
             let currentScrubberX = inner_width * 0.3;
